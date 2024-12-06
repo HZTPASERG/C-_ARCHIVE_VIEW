@@ -1,0 +1,11 @@
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\bin\Debug\ArchiveShowDocs.exe.config
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\bin\Debug\ArchiveShowDocs.exe
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\bin\Debug\ArchiveShowDocs.pdb
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.csproj.AssemblyReference.cache
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.LoginForm.resources
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.Properties.Resources.resources
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.csproj.GenerateResource.cache
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.csproj.CoreCompileInputs.cache
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.exe
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.pdb
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.MenuForm.resources
