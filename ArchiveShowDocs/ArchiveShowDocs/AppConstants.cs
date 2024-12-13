@@ -23,6 +23,8 @@ namespace ArchiveShowDocs
         public const string SqlDriver = "SQL Server";
         public const string SqlAppRole = "WORK_ROLE";
         public const string RolePass = "wrk";
+        public const string SqlServer = "NT3";
+        public const string DatabaseName = "master";
         public const string SqlLogin = "LoginForAll";
         public const string LoginPassword = "all";
         public const string SqlLoginAdmin = "AppAdmin";
@@ -30,5 +32,7 @@ namespace ArchiveShowDocs
 
         // Directorios
         public const string DirectoryOfConfig = "USERS";
+        public const int LoginAttemptLimit = 3;
+        public const string LockFileName = "SERG.txt";
     }
 }

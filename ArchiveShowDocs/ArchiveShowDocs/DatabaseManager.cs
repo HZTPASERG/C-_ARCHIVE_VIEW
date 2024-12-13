@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Data.SqlClient;
+using System.Diagnostics;
 
 namespace ArchiveShowDocs
 {
@@ -11,52 +12,83 @@ namespace ArchiveShowDocs
     {
         private SqlConnection _connection;
 
+        // Constructor sin parámetros
         public DatabaseManager()
         {
-            // Configurar conexión inicial
-            _connection = new SqlConnection("Server=.;Database=Master;User Id=sa;Password=yourpassword;");
+            // Opcional: Establecer una configuración predeterminada
+            // Por ejemplo, puedes llamar a Connect con valores predeterminados aquí si lo necesitas.
         }
 
-        public bool ValidateUser(string username, string password, out string role)
+        // Constructor con parámetros para inicializar la conexión directamente
+        public DatabaseManager(string server, string database, string username, string password)
         {
-            role = string.Empty;
+            Connect(server, database, username, password);
+        }
 
+        public bool Connect(string server, string database, string username, string password)
+        {
             try
             {
+                string connectionString = $"Server={server};Database={database};User Id={username};Password={password};";
+                _connection = new SqlConnection(connectionString);
                 _connection.Open();
-                SqlCommand command = new SqlCommand("EXEC DATD..CurUser @Username, @Password", _connection);
-                command.Parameters.AddWithValue("@Username", username);
-                command.Parameters.AddWithValue("@Password", password);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
 
-                using (SqlDataReader reader = command.ExecuteReader())
+        public bool ValidateUser(string username, string password, out int userId, out string role, out bool pwdChangeRequired)
+        {
+            userId = 0;
+            role = string.Empty;
+            pwdChangeRequired = false;
+
+            string query = "EXEC DATD..CurUser @username, @password";
+            
+            using (SqlCommand cmd = new SqlCommand(query, _connection))
+            {
+                cmd.Parameters.AddWithValue("@username", username);
+                cmd.Parameters.AddWithValue("@password", password);
+
+                try
                 {
-                    if (reader.Read())
+                    using (SqlDataReader reader = cmd.ExecuteReader())
                     {
-                        role = reader["role"].ToString();
-                        return true;
+                        if (reader.Read())
+                        {
+                            userId = Convert.ToInt32(reader["user_id"]);
+                            if (userId == 0)
+                            {
+                                return false;
+                            }
+
+                            role = reader["role"].ToString();
+                            pwdChangeRequired = reader["cfg_data"].ToString().Contains("CHANGEPWDONLOGIN=-1");
+                            return true;
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error al validar usuario: {ex.Message}");
-            }
-            finally
-            {
-                _connection.Close();
+                catch (Exception)
+                {
+                    return false;
+                }
             }
 
             return false;
         }
 
-        public int StartSession(string username)
+        public int StartSession(int UserId)
         {
             try
             {
-                _connection.Open();
-                SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_ON @Username", _connection);
-                command.Parameters.AddWithValue("@Username", username);
+                EnsureConnection();
 
+                SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_ON @USER_ID", _connection);
+                command.Parameters.AddWithValue("@USER_ID", UserId);
+                
                 return (int)command.ExecuteScalar();
             }
             catch (Exception ex)
@@ -64,17 +96,20 @@ namespace ArchiveShowDocs
                 Console.WriteLine($"Error al iniciar sesión: {ex.Message}");
                 return -1;
             }
-            finally
-            {
-                _connection.Close();
-            }
         }
 
         public void EndSession(int sessionId)
         {
+            if (_connection == null)
+            {
+                Console.WriteLine("La conexión a la base de datos no está inicializada.");
+                return;
+            }
+
             try
             {
-                _connection.Open();
+                EnsureConnection();
+
                 SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_OFF @SessionId", _connection);
                 command.Parameters.AddWithValue("@SessionId", sessionId);
 
@@ -89,5 +124,19 @@ namespace ArchiveShowDocs
                 _connection.Close();
             }
         }
+
+        private void EnsureConnection()
+        {
+            if (_connection == null)
+            {
+                throw new InvalidOperationException("La conexión a la base de datos no está inicializada.");
+            }
+
+            if (_connection.State != System.Data.ConnectionState.Open)
+            {
+                _connection.Open();
+            }
+        }
+
     }
 }
