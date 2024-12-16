@@ -14,6 +14,7 @@ namespace ArchiveShowDocs
         public int UserId { get; private set; }
         public string UserName { get; private set; }
         public string UserRole { get; private set; }
+        public string UserFullName { get; private set; }
         public int SessionId { get; private set; }
         public DatabaseManager Database { get; private set; }
         public UserCatalog UserCatalog { get; private set; }
@@ -23,6 +24,7 @@ namespace ArchiveShowDocs
         {
             Database = new DatabaseManager();
             LocalPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppConstants.DirectoryOfConfig);
+            Debug.WriteLine("LocalPath: " + LocalPath);
         }
 
         /// <summary>
@@ -31,7 +33,7 @@ namespace ArchiveShowDocs
         public bool StartApp()
         {
             // Cerrar cualquier conexión previa con el servidor
-            Database.EndSession(SessionId);
+            Database.EndSession(UserId);
 
             // Configurar el título de la ventana principal
             string oldWindowTitle = Application.ProductName;
@@ -59,6 +61,9 @@ namespace ArchiveShowDocs
                 UserName = loginForm.Username;
                 UserRole = loginForm.UserRole;
                 UserId = loginForm.UserId; // Asegúrate de que LoginForm tenga una propiedad UserId para almacenar este valor
+                UserFullName = loginForm.UserFullName;
+
+                newWindowTitle = newWindowTitle + " | Користувач: " + UserFullName;
 
                 // Configurar directorio del usuario
                 UserCatalog = new UserCatalog(AppConstants.DirectoryOfConfig, UserName);
@@ -109,7 +114,7 @@ namespace ArchiveShowDocs
         /// </summary>
         public void EndApp()
         {
-            Database.EndSession(SessionId);
+            Database.EndSession(UserId);
             UserCatalog.ReleaseLock();
         }
 

@@ -22,14 +22,15 @@ namespace ArchiveShowDocs
         // Constructor con parámetros para inicializar la conexión directamente
         public DatabaseManager(string server, string database, string username, string password)
         {
-            Connect(server, database, username, password);
+            string appName = $"{AppConstants.NameMainWindow} | Користувач: {username}";
+            Connect(server, database, username, password, appName);
         }
 
-        public bool Connect(string server, string database, string username, string password)
+        public bool Connect(string server, string database, string username, string password, string appName)
         {
             try
             {
-                string connectionString = $"Server={server};Database={database};User Id={username};Password={password};";
+                string connectionString = $"Server={server};Database={database};User Id={username};Password={password};Application Name={appName};";
                 _connection = new SqlConnection(connectionString);
                 _connection.Open();
                 return true;
@@ -40,9 +41,10 @@ namespace ArchiveShowDocs
             }
         }
 
-        public bool ValidateUser(string username, string password, out int userId, out string role, out bool pwdChangeRequired)
+        public bool ValidateUser(string username, string password, out int userId, out string role, out bool pwdChangeRequired, out string fullName)
         {
             userId = 0;
+            fullName = "";
             role = string.Empty;
             pwdChangeRequired = false;
 
@@ -59,6 +61,7 @@ namespace ArchiveShowDocs
                     {
                         if (reader.Read())
                         {
+                            fullName = reader["fullname"].ToString();
                             userId = Convert.ToInt32(reader["user_id"]);
                             if (userId == 0)
                             {
@@ -67,6 +70,7 @@ namespace ArchiveShowDocs
 
                             role = reader["role"].ToString();
                             pwdChangeRequired = reader["cfg_data"].ToString().Contains("CHANGEPWDONLOGIN=-1");
+                            
                             return true;
                         }
                     }
@@ -98,7 +102,7 @@ namespace ArchiveShowDocs
             }
         }
 
-        public void EndSession(int sessionId)
+        public void EndSession(int UserId)
         {
             if (_connection == null)
             {
@@ -110,8 +114,8 @@ namespace ArchiveShowDocs
             {
                 EnsureConnection();
 
-                SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_OFF @SessionId", _connection);
-                command.Parameters.AddWithValue("@SessionId", sessionId);
+                SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_OFF @USER_ID", _connection);
+                command.Parameters.AddWithValue("@USER_ID", UserId);
 
                 command.ExecuteNonQuery();
             }

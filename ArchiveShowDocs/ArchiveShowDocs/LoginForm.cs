@@ -20,6 +20,7 @@ namespace ArchiveShowDocs
 
         public int UserId { get; private set; }
         public string Username { get; private set; }
+        public string UserFullName { get; private set; }
         public string UserRole { get; private set; }
         public bool PasswordChangeRequired { get; private set; }
 
@@ -54,16 +55,17 @@ namespace ArchiveShowDocs
             }
 
             string encodedPassword = PasswordHelper.EncodePassword(password);
+            string appName = "";
 
             // Crear conexión temporal a la BD
-            if (!_database.Connect(AppConstants.SqlServer, AppConstants.DatabaseName, AppConstants.SqlLogin, AppConstants.LoginPassword))
+            if (!_database.Connect(AppConstants.SqlServer, AppConstants.DatabaseName, AppConstants.SqlLogin, AppConstants.LoginPassword, appName))
             {
                 lblMessage.Text = "Error al conectar con el servidor.";
                 return;
             }
 
             // Validar usuario
-            if (!_database.ValidateUser(Username, encodedPassword, out int id, out string role, out bool pwdChangeRequired))
+            if (!_database.ValidateUser(Username, encodedPassword, out int id, out string role, out bool pwdChangeRequired, out string fullName))
             {
                 _loginAttempts--;
                 lblMessage.Text = $"Usuario o contraseña incorrectos. Intentos restantes: {_loginAttempts}";
@@ -79,6 +81,7 @@ namespace ArchiveShowDocs
             UserId = id;
             UserRole = role;
             PasswordChangeRequired = pwdChangeRequired;
+            UserFullName = fullName;
 
             // Guardar el último usuario en el archivo INI
             string iniFilePath = Path.Combine(AppConstants.DirectoryOfConfig, AppConstants.SqlIniFile);

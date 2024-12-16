@@ -22,8 +22,22 @@ namespace ArchiveShowDocs
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // Cierra la aplicación
-            Application.Exit();
+            // Confirmar si el usuario realmente quiere salir
+            var result = MessageBox.Show(
+                "¿Está seguro de que desea cerrar la aplicación?",
+                "Confirmar salida",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (result == DialogResult.Yes)
+            {
+                // Cierra la sesión actual de SQL Server y libera recursos
+                _mainApp.EndApp();
+
+                // Cierra la aplicación
+                Application.Exit();
+            }
+
         }
     }
 }

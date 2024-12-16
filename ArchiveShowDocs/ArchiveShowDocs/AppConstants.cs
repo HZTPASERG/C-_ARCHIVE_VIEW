@@ -9,7 +9,7 @@ namespace ArchiveShowDocs
     public static class AppConstants
     {
         // Títulos y textos
-        public const string NameMainWindow = "Користувач архіва \"УКРЕЛЕКТРОАПАРАТ\"";
+        public const string NameMainWindow = "Show Documents \"УКРЕЛЕКТРОАПАРАТ\"";
         public const string ErrorTitle = "Ошибка !";
 
         // Archivos
@@ -31,6 +31,7 @@ namespace ArchiveShowDocs
         public const string AdminPassword = "adm";
 
         // Directorios
+        //public const string DirectoryOtherUsers = "\\nt3\Users$";
         public const string DirectoryOfConfig = "USERS";
         public const int LoginAttemptLimit = 3;
         public const string LockFileName = "SERG.txt";
