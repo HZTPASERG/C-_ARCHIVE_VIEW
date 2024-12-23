@@ -13,16 +13,20 @@ namespace ArchiveShowDocs
     {
         public int UserId { get; private set; }
         public string UserName { get; private set; }
+        public string EncodedPassword { get; private set; }
         public string UserRole { get; private set; }
         public string UserFullName { get; private set; }
         public int SessionId { get; private set; }
+        public DatabaseManager DatabaseTmp { get; private set; }
         public DatabaseManager Database { get; private set; }
         public UserCatalog UserCatalog { get; private set; }
         public string LocalPath { get; private set; }
+        public string WindowTitle { get; private set; }
 
         public MainApp()
         {
-            Database = new DatabaseManager();
+            WindowTitle = AppConstants.NameMainWindow;
+            DatabaseTmp = new DatabaseManager(AppConstants.SqlServer, AppConstants.DatabaseName, AppConstants.SqlLogin, AppConstants.LoginPassword, WindowTitle);
             LocalPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppConstants.DirectoryOfConfig);
             Debug.WriteLine("LocalPath: " + LocalPath);
         }
@@ -32,12 +36,9 @@ namespace ArchiveShowDocs
         /// </summary>
         public bool StartApp()
         {
-            // Cerrar cualquier conexión previa con el servidor
-            Database.EndSession(UserId);
-
             // Configurar el título de la ventana principal
             string oldWindowTitle = Application.ProductName;
-            string newWindowTitle = AppConstants.NameMainWindow;
+            //string newWindowTitle = AppConstants.NameMainWindow;
 
             // Configurar el manejador global de errores
             Application.ThreadException += (sender, e) =>
@@ -50,7 +51,7 @@ namespace ArchiveShowDocs
             };
 
             // Mostrar formulario de inicio de sesión
-            using (LoginForm loginForm = new LoginForm(Database))
+            using (LoginForm loginForm = new LoginForm(DatabaseTmp))
             {
                 if (loginForm.ShowDialog() != System.Windows.Forms.DialogResult.OK)
                 {
@@ -59,11 +60,12 @@ namespace ArchiveShowDocs
 
                 // Obtener datos del usuario desde el formulario
                 UserName = loginForm.Username;
+                EncodedPassword = loginForm.EncodedPassword;
                 UserRole = loginForm.UserRole;
                 UserId = loginForm.UserId; // Asegúrate de que LoginForm tenga una propiedad UserId para almacenar este valor
                 UserFullName = loginForm.UserFullName;
 
-                newWindowTitle = newWindowTitle + " | Користувач: " + UserFullName;
+                WindowTitle = WindowTitle + " | Користувач: " + UserFullName;
 
                 // Configurar directorio del usuario
                 UserCatalog = new UserCatalog(AppConstants.DirectoryOfConfig, UserName);
@@ -76,6 +78,8 @@ namespace ArchiveShowDocs
                     );
                     return false;
                 }
+
+                Database = new DatabaseManager(AppConstants.SqlServer, AppConstants.DatabaseName, AppConstants.SqlLoginAdmin, AppConstants.AdminPassword, WindowTitle);
 
                 // Crear sesión en la base de datos
                 SessionId = Database.StartSession(UserId);
@@ -94,7 +98,7 @@ namespace ArchiveShowDocs
             {
                 MessageBox.Show(
                     "¡La aplicación ya está en ejecución!",
-                    newWindowTitle,
+                    WindowTitle,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Exclamation
                 );
@@ -103,8 +107,11 @@ namespace ArchiveShowDocs
 
             // Crear y mostrar el formulario principal después del inicio de sesión
             MenuForm mainForm = new MenuForm(this);
-            mainForm.Text = newWindowTitle; // Configurar el título aquí
+            mainForm.Text = WindowTitle; // Configurar el título aquí
             Application.Run(mainForm); // Iniciar el formulario principal
+
+            // Cerrar cualquier conexión previa con el servidor
+            DatabaseTmp.EndSession(UserId);
 
             return true;
         }
@@ -114,7 +121,7 @@ namespace ArchiveShowDocs
         /// </summary>
         public void EndApp()
         {
-            Database.EndSession(UserId);
+            Database.EndSession(SessionId);
             UserCatalog.ReleaseLock();
         }
 
@@ -153,5 +160,21 @@ namespace ArchiveShowDocs
                 return true;
             }
         }
+
+        /// <summary>
+        /// Invoque al método UpdateStartAppDuration de DatabaseManager para actualizar el campo StartApp_Duration.
+        /// </summary>
+        public void StartAppEnd()
+        {
+            if (SessionId > 0)
+            {
+                bool success = Database.UpdateStartAppDuration(SessionId);
+                if (!success)
+                {
+                    Console.WriteLine("No se pudo actualizar la duración del inicio de la aplicación en la base de datos.");
+                }
+            }
+        }
+
     }
 }

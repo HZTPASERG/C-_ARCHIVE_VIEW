@@ -20,6 +20,15 @@ namespace ArchiveShowDocs
             _mainApp = mainApp ?? throw new ArgumentNullException(nameof(mainApp));
         }
 
+        // Sobrescribir OnShown
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+
+            // Actualizar la duración del inicio de la aplicación
+            _mainApp.StartAppEnd();
+        }
+
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
             // Confirmar si el usuario realmente quiere salir

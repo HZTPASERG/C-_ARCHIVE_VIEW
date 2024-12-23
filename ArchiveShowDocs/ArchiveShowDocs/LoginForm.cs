@@ -20,6 +20,7 @@ namespace ArchiveShowDocs
 
         public int UserId { get; private set; }
         public string Username { get; private set; }
+        public string EncodedPassword { get; private set; }
         public string UserFullName { get; private set; }
         public string UserRole { get; private set; }
         public bool PasswordChangeRequired { get; private set; }
@@ -54,7 +55,7 @@ namespace ArchiveShowDocs
                 return;
             }
 
-            string encodedPassword = PasswordHelper.EncodePassword(password);
+            EncodedPassword = PasswordHelper.EncodePassword(password);
             string appName = "";
 
             // Crear conexión temporal a la BD
@@ -65,7 +66,7 @@ namespace ArchiveShowDocs
             }
 
             // Validar usuario
-            if (!_database.ValidateUser(Username, encodedPassword, out int id, out string role, out bool pwdChangeRequired, out string fullName))
+            if (!_database.ValidateUser(Username, EncodedPassword, out int id, out string role, out bool pwdChangeRequired, out string fullName))
             {
                 _loginAttempts--;
                 lblMessage.Text = $"Usuario o contraseña incorrectos. Intentos restantes: {_loginAttempts}";

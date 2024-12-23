@@ -20,9 +20,9 @@ namespace ArchiveShowDocs
         }
 
         // Constructor con parámetros para inicializar la conexión directamente
-        public DatabaseManager(string server, string database, string username, string password)
+        public DatabaseManager(string server, string database, string username, string password, string appName)
         {
-            string appName = $"{AppConstants.NameMainWindow} | Користувач: {username}";
+            // string appName = $"{AppConstants.NameMainWindow} | Користувач: {username}";
             Connect(server, database, username, password, appName);
         }
 
@@ -90,17 +90,54 @@ namespace ArchiveShowDocs
             {
                 EnsureConnection();
 
+                // Preparar el comando SQL para llamar al procedimiento almacenado
                 SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_ON @USER_ID", _connection);
                 command.Parameters.AddWithValue("@USER_ID", UserId);
-                
-                return (int)command.ExecuteScalar();
+
+                // Ejecutar el comando y leer los resultados devueltos por el procedimiento almacenado
+                using (SqlDataReader reader = command.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        // Leer el campo session_id de la fila devuelta
+                        int sessionId = reader.GetInt32(reader.GetOrdinal("session_id"));
+                        return sessionId;
+                    }
+                    else
+                    {
+                        // Si no se devuelve ninguna fila, algo salió mal
+                        Console.WriteLine("Error: No se devolvió ningún resultado de Admin_Session_ON.");
+                        return -1;
+                    }
+                }
             }
             catch (Exception ex)
             {
+                // Manejar cualquier excepción que ocurra
                 Console.WriteLine($"Error al iniciar sesión: {ex.Message}");
                 return -1;
             }
         }
+
+        public bool UpdateStartAppDuration(int sessionId)
+        {
+            try
+            {
+                EnsureConnection();
+
+                SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_Start_duration @SESSION_ID", _connection);
+                command.Parameters.AddWithValue("@SESSION_ID", sessionId);
+
+                command.ExecuteNonQuery();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al actualizar la duración del inicio de la aplicación: {ex.Message}");
+                return false;
+            }
+        }
+
 
         public void EndSession(int UserId)
         {

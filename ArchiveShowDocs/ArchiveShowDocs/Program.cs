@@ -23,6 +23,7 @@ namespace ArchiveShowDocs
             // Iniciar la aplicación
             if (app.StartApp())
             {
+                // Abrir formulario principal
                 Application.Run(new MenuForm(app)); // Abrir formulario principal
             }
         }
