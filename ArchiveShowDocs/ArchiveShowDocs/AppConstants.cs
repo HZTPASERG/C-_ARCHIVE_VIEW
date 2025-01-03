@@ -9,7 +9,7 @@ namespace ArchiveShowDocs
     public static class AppConstants
     {
         // Títulos y textos
-        public const string NameMainWindow = "Show Documents \"УКРЕЛЕКТРОАПАРАТ\"";
+        public const string NameMainWindow = "Show Documents 'УКРЕЛЕКТРОАПАРАТ'";
         public const string ErrorTitle = "Ошибка !";
 
         // Archivos

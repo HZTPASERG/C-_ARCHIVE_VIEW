@@ -15,7 +15,7 @@ namespace ArchiveShowDocs
 {
     public partial class LoginForm : Form
     {
-        private readonly DatabaseManager _database;
+        private readonly DatabaseManager _tmpDatabaseManager; // Conexión temporal principal;
         private int _loginAttempts;
 
         public int UserId { get; private set; }
@@ -25,10 +25,16 @@ namespace ArchiveShowDocs
         public string UserRole { get; private set; }
         public bool PasswordChangeRequired { get; private set; }
 
-        public LoginForm(DatabaseManager database)
+        public LoginForm(DatabaseManager tmpDatabaseManager)
         {
+            if (tmpDatabaseManager == null)
+                throw new ArgumentNullException(nameof(tmpDatabaseManager), "El objeto DatabaseManager no puede ser nulo.");
+
+            if (tmpDatabaseManager._temporaryConnection == null || tmpDatabaseManager._temporaryConnection.State != ConnectionState.Open)
+                throw new InvalidOperationException("La conexión temporal no está abierta en el objeto DatabaseManager.");
+
             InitializeComponent();
-            _database = database ?? throw new ArgumentNullException(nameof(database));
+            _tmpDatabaseManager = tmpDatabaseManager ?? throw new ArgumentNullException(nameof(tmpDatabaseManager));
             _loginAttempts = AppConstants.LoginAttemptLimit;
             LoadPreviousUsername();
         }
@@ -46,6 +52,12 @@ namespace ArchiveShowDocs
 
         private void label1_Click(object sender, EventArgs e)
         {
+            if (_tmpDatabaseManager._temporaryConnection == null || _tmpDatabaseManager._temporaryConnection.State != ConnectionState.Open)
+            {
+                lblMessage.Text = "La conexión temporal no está abierta.";
+                return;
+            }
+
             Username = txtUsername.Text.Trim();
             string password = txtPassword.Text.Trim();
 
@@ -56,17 +68,9 @@ namespace ArchiveShowDocs
             }
 
             EncodedPassword = PasswordHelper.EncodePassword(password);
-            string appName = "";
 
-            // Crear conexión temporal a la BD
-            if (!_database.Connect(AppConstants.SqlServer, AppConstants.DatabaseName, AppConstants.SqlLogin, AppConstants.LoginPassword, appName))
-            {
-                lblMessage.Text = "Error al conectar con el servidor.";
-                return;
-            }
-
-            // Validar usuario
-            if (!_database.ValidateUser(Username, EncodedPassword, out int id, out string role, out bool pwdChangeRequired, out string fullName))
+            // Validar usuario usando la conexión temporal
+            if (!_tmpDatabaseManager.ValidateUser(Username, EncodedPassword, out int id, out string role, out bool pwdChangeRequired, out string fullName))
             {
                 _loginAttempts--;
                 lblMessage.Text = $"Usuario o contraseña incorrectos. Intentos restantes: {_loginAttempts}";
@@ -79,6 +83,7 @@ namespace ArchiveShowDocs
                 return;
             }
 
+            // Configuración después de la validación exitosa
             UserId = id;
             UserRole = role;
             PasswordChangeRequired = pwdChangeRequired;

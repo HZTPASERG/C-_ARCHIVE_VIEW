@@ -3,133 +3,187 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Data;
 using System.Data.SqlClient;
 using System.Diagnostics;
 
 namespace ArchiveShowDocs
 {
-    public class DatabaseManager
+    public class DatabaseManager : IDisposable
     {
-        private SqlConnection _connection;
+        public SqlConnection _persistentConnection;
+        public SqlConnection _temporaryConnection;
+        private readonly string _persistentConnectionString;
+        private string _temporaryConnectionString;
 
-        // Constructor sin parámetros
-        public DatabaseManager()
-        {
-            // Opcional: Establecer una configuración predeterminada
-            // Por ejemplo, puedes llamar a Connect con valores predeterminados aquí si lo necesitas.
-        }
-
-        // Constructor con parámetros para inicializar la conexión directamente
+        // Constructor con parámetros para inicializar la conexión persistente
         public DatabaseManager(string server, string database, string username, string password, string appName)
         {
-            // string appName = $"{AppConstants.NameMainWindow} | Користувач: {username}";
-            Connect(server, database, username, password, appName);
+            _persistentConnectionString = $"Server={server};Database={database};User Id={username};Password={password};Application Name={appName};";
+            _persistentConnection = new SqlConnection(_persistentConnectionString);
+            OpenPersistentConnection(); // Abre la conexión persistente al inicializar
         }
 
-        public bool Connect(string server, string database, string username, string password, string appName)
+        // Constructor para una conexión temporal (opcional, para flexibilidad)
+        public DatabaseManager() { }
+
+        /// <summary>
+        /// Abre la conexión persistente si no está abierta.
+        /// </summary>
+        private void OpenPersistentConnection()
+        {
+            if (_persistentConnection.State != ConnectionState.Open)
+            {
+                try
+                {
+                    _persistentConnection.Open();
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException("No se pudo establecer la conexión con la base de datos.", ex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Verifica si la conexión persistente está activa y la restaura si es necesario.
+        /// </summary>
+        public void EnsurePersistentConnection()
+        {
+            if (_persistentConnection.State == ConnectionState.Closed || _persistentConnection.State == ConnectionState.Broken)
+            {
+                _persistentConnection.Close(); // Cierra cualquier conexión rota
+                OpenPersistentConnection();   // Intenta reabrir la conexión persistente
+            }
+        }
+
+        /// <summary>
+        /// Abre una conexión temporal.
+        /// </summary>
+        public bool OpenTemporaryConnection(string server, string database, string username, string password, string appName)
         {
             try
             {
-                string connectionString = $"Server={server};Database={database};User Id={username};Password={password};Application Name={appName};";
-                _connection = new SqlConnection(connectionString);
-                _connection.Open();
+                Debug.WriteLine("Intentando abrir conexión temporal...");
+                Debug.WriteLine($"Server: {server}, Database: {database}, User: {username}, AppName: {appName}");
+
+                // Escapar comillas en appName
+                appName = appName.Replace("\"", "\"\"");
+
+                _temporaryConnectionString = $"Server={server};Database={database};User Id={username};Password={password};Application Name={appName};";
+                Debug.WriteLine($"Generated Connection String: {_temporaryConnectionString}");
+
+                _temporaryConnection = new SqlConnection(_temporaryConnectionString);
+                _temporaryConnection.Open();
+
+                Debug.WriteLine("Conexión temporal abierta correctamente.");
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Error al abrir conexión temporal: {ex.Message}");
                 return false;
             }
         }
 
+        /// <summary>
+        /// Valida al usuario utilizando  utilizando la conexión temporal y un procedimiento almacenado.
+        /// </summary>
         public bool ValidateUser(string username, string password, out int userId, out string role, out bool pwdChangeRequired, out string fullName)
-        {
+        {            
+            if (_temporaryConnection == null || _temporaryConnection.State != ConnectionState.Open)
+            {
+                throw new InvalidOperationException("La conexión temporal no está abierta.");
+            }
+
+            Debug.WriteLine("username: " + username + " | password: " + password);
+
             userId = 0;
-            fullName = "";
+            fullName = string.Empty;
             role = string.Empty;
             pwdChangeRequired = false;
 
             string query = "EXEC DATD..CurUser @username, @password";
-            
-            using (SqlCommand cmd = new SqlCommand(query, _connection))
-            {
-                cmd.Parameters.AddWithValue("@username", username);
-                cmd.Parameters.AddWithValue("@password", password);
 
-                try
+            try
+            {
+                using (SqlCommand cmd = new SqlCommand(query, _temporaryConnection))
                 {
+                    cmd.Parameters.AddWithValue("@username", username);
+                    cmd.Parameters.AddWithValue("@password", password);
+
                     using (SqlDataReader reader = cmd.ExecuteReader())
                     {
                         if (reader.Read())
                         {
                             fullName = reader["fullname"].ToString();
                             userId = Convert.ToInt32(reader["user_id"]);
-                            if (userId == 0)
-                            {
-                                return false;
-                            }
+                            if (userId == 0) return false;
 
                             role = reader["role"].ToString();
                             pwdChangeRequired = reader["cfg_data"].ToString().Contains("CHANGEPWDONLOGIN=-1");
-                            
                             return true;
                         }
-                    }
-                }
-                catch (Exception)
-                {
-                    return false;
-                }
-            }
-
-            return false;
-        }
-
-        public int StartSession(int UserId)
-        {
-            try
-            {
-                EnsureConnection();
-
-                // Preparar el comando SQL para llamar al procedimiento almacenado
-                SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_ON @USER_ID", _connection);
-                command.Parameters.AddWithValue("@USER_ID", UserId);
-
-                // Ejecutar el comando y leer los resultados devueltos por el procedimiento almacenado
-                using (SqlDataReader reader = command.ExecuteReader())
-                {
-                    if (reader.Read())
-                    {
-                        // Leer el campo session_id de la fila devuelta
-                        int sessionId = reader.GetInt32(reader.GetOrdinal("session_id"));
-                        return sessionId;
-                    }
-                    else
-                    {
-                        // Si no se devuelve ninguna fila, algo salió mal
-                        Console.WriteLine("Error: No se devolvió ningún resultado de Admin_Session_ON.");
-                        return -1;
                     }
                 }
             }
             catch (Exception ex)
             {
-                // Manejar cualquier excepción que ocurra
+                Console.WriteLine($"Error al validar usuario: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Inicia una sesión en la base de datos.
+        /// </summary>
+        public int StartSession(int userId)
+        {
+            try
+            {
+                EnsurePersistentConnection();
+
+                using (SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_ON @USER_ID", _persistentConnection))
+                {
+                    command.Parameters.AddWithValue("@USER_ID", userId);
+
+                    using (SqlDataReader reader = command.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            return reader.GetInt32(reader.GetOrdinal("session_id"));
+                        }
+                        else
+                        {
+                            Console.WriteLine("Error: No se devolvió ningún resultado de Admin_Session_ON.");
+                            return -1;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
                 Console.WriteLine($"Error al iniciar sesión: {ex.Message}");
                 return -1;
             }
         }
 
+        /// <summary>
+        /// Actualiza la duración del inicio de la aplicación.
+        /// </summary>
         public bool UpdateStartAppDuration(int sessionId)
         {
             try
             {
-                EnsureConnection();
+                EnsurePersistentConnection();
 
-                SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_Start_duration @SESSION_ID", _connection);
-                command.Parameters.AddWithValue("@SESSION_ID", sessionId);
-
-                command.ExecuteNonQuery();
-                return true;
+                using (SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_Start_duration @SESSION_ID", _persistentConnection))
+                {
+                    command.Parameters.AddWithValue("@SESSION_ID", sessionId);
+                    command.ExecuteNonQuery();
+                    return true;
+                }
             }
             catch (Exception ex)
             {
@@ -138,46 +192,49 @@ namespace ArchiveShowDocs
             }
         }
 
-
-        public void EndSession(int UserId)
+        /// <summary>
+        /// Finaliza la sesión persistente en la base de datos.
+        /// </summary>
+        public void EndSession(int userId)
         {
-            if (_connection == null)
-            {
-                Console.WriteLine("La conexión a la base de datos no está inicializada.");
-                return;
-            }
-
             try
             {
-                EnsureConnection();
+                EnsurePersistentConnection();
 
-                SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_OFF @USER_ID", _connection);
-                command.Parameters.AddWithValue("@USER_ID", UserId);
-
-                command.ExecuteNonQuery();
+                using (SqlCommand command = new SqlCommand("EXEC DATD..Admin_Session_OFF @USER_ID", _persistentConnection))
+                {
+                    command.Parameters.AddWithValue("@USER_ID", userId);
+                    command.ExecuteNonQuery();
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error al terminar sesión: {ex.Message}");
             }
-            finally
-            {
-                _connection.Close();
-            }
         }
 
-        private void EnsureConnection()
+        /// <summary>
+        /// Libera los recursos asociados a la conexión temporal.
+        /// </summary>
+        public void DisposeTemp()
         {
-            if (_connection == null)
+            if (_temporaryConnection != null)
             {
-                throw new InvalidOperationException("La conexión a la base de datos no está inicializada.");
-            }
-
-            if (_connection.State != System.Data.ConnectionState.Open)
-            {
-                _connection.Open();
+                _temporaryConnection.Close();
+                _temporaryConnection.Dispose();
             }
         }
 
+        /// <summary>
+        /// Libera los recursos asociados a la conexión persistente.
+        /// </summary>
+        public void Dispose()
+        {
+            if (_persistentConnection != null)
+            {
+                _persistentConnection.Close();
+                _persistentConnection.Dispose();
+            }
+        }
     }
 }

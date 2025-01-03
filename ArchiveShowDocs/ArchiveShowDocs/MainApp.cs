@@ -17,16 +17,27 @@ namespace ArchiveShowDocs
         public string UserRole { get; private set; }
         public string UserFullName { get; private set; }
         public int SessionId { get; private set; }
-        public DatabaseManager DatabaseTmp { get; private set; }
-        public DatabaseManager Database { get; private set; }
+        public DatabaseManager DatabaseManagerTemp { get; private set; }
+        public DatabaseManager DatabaseManagerPersistent { get; private set; }
         public UserCatalog UserCatalog { get; private set; }
         public string LocalPath { get; private set; }
         public string WindowTitle { get; private set; }
 
         public MainApp()
         {
-            WindowTitle = AppConstants.NameMainWindow;
-            DatabaseTmp = new DatabaseManager(AppConstants.SqlServer, AppConstants.DatabaseName, AppConstants.SqlLogin, AppConstants.LoginPassword, WindowTitle);
+            WindowTitle = AppConstants.NameMainWindow.Replace("\"", "\"\""); ;
+            DatabaseManagerTemp = new DatabaseManager();
+            bool connectionOpened = DatabaseManagerTemp.OpenTemporaryConnection(
+                AppConstants.SqlServer, 
+                AppConstants.DatabaseName, 
+                AppConstants.SqlLogin, 
+                AppConstants.LoginPassword, 
+                ""
+            );
+            if (!connectionOpened)
+            {
+                throw new InvalidOperationException("No se pudo establecer la conexión temporal.");
+            }
             LocalPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppConstants.DirectoryOfConfig);
             Debug.WriteLine("LocalPath: " + LocalPath);
         }
@@ -51,7 +62,7 @@ namespace ArchiveShowDocs
             };
 
             // Mostrar formulario de inicio de sesión
-            using (LoginForm loginForm = new LoginForm(DatabaseTmp))
+            using (LoginForm loginForm = new LoginForm(DatabaseManagerTemp))
             {
                 if (loginForm.ShowDialog() != System.Windows.Forms.DialogResult.OK)
                 {
@@ -79,10 +90,10 @@ namespace ArchiveShowDocs
                     return false;
                 }
 
-                Database = new DatabaseManager(AppConstants.SqlServer, AppConstants.DatabaseName, AppConstants.SqlLoginAdmin, AppConstants.AdminPassword, WindowTitle);
+                DatabaseManagerPersistent = new DatabaseManager(AppConstants.SqlServer, AppConstants.DatabaseName, AppConstants.SqlLoginAdmin, AppConstants.AdminPassword, WindowTitle);
 
                 // Crear sesión en la base de datos
-                SessionId = Database.StartSession(UserId);
+                SessionId = DatabaseManagerPersistent.StartSession(UserId);
                 if (SessionId <= 0)
                 {
                     System.Windows.Forms.MessageBox.Show(
@@ -110,8 +121,8 @@ namespace ArchiveShowDocs
             mainForm.Text = WindowTitle; // Configurar el título aquí
             Application.Run(mainForm); // Iniciar el formulario principal
 
-            // Cerrar cualquier conexión previa con el servidor
-            DatabaseTmp.EndSession(UserId);
+            // Liberar los recursos asociados a la conexión temporal
+            DatabaseManagerTemp.DisposeTemp();
 
             return true;
         }
@@ -121,7 +132,7 @@ namespace ArchiveShowDocs
         /// </summary>
         public void EndApp()
         {
-            Database.EndSession(SessionId);
+            DatabaseManagerPersistent.EndSession(SessionId);
             UserCatalog.ReleaseLock();
         }
 
@@ -168,7 +179,7 @@ namespace ArchiveShowDocs
         {
             if (SessionId > 0)
             {
-                bool success = Database.UpdateStartAppDuration(SessionId);
+                bool success = DatabaseManagerPersistent.UpdateStartAppDuration(SessionId);
                 if (!success)
                 {
                     Console.WriteLine("No se pudo actualizar la duración del inicio de la aplicación en la base de datos.");
