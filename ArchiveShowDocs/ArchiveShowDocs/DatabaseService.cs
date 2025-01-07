@@ -7,6 +7,7 @@ using System.Data.SqlClient;
 using System.Windows.Forms;
 using System.Drawing;
 using System.IO;
+using System.Data;
 
 
 namespace ArchiveShowDocs
@@ -14,6 +15,7 @@ namespace ArchiveShowDocs
     public class DatabaseService
     {
         private readonly DatabaseManager _databaseManager;
+        public List<TreeNodeModel> nodeList;
 
         // Constructor que recibe el DatabaseManager con la conexión persistente
         public DatabaseService(DatabaseManager databaseManager)
@@ -25,9 +27,9 @@ namespace ArchiveShowDocs
         /// Carga los datos para el TreeView desde la base de datos.
         /// </summary>
         /// <returns>Lista de nodos del árbol.</returns>
-        public List<TreeNodeModel> LoadTreeData()
+        public List<TreeNodeModel> LoadTreeData(DataTable documentTable)
         {
-            List<TreeNodeModel> nodes = new List<TreeNodeModel>();
+            nodeList = new List<TreeNodeModel>();
 
             try
             {
@@ -36,6 +38,7 @@ namespace ArchiveShowDocs
                 Console.WriteLine("Conexión persistente asegurada.");
 
                 // Usar la conexión persistente del DatabaseManager
+                // Generamos los nodos del treeView
                 using (SqlCommand command = new SqlCommand("EXEC DATD..User_Archives_GetList", _databaseManager._persistentConnection))
                 {
                     Console.WriteLine("Ejecutando procedimiento almacenado: User_Archives_GetList");
@@ -49,9 +52,9 @@ namespace ArchiveShowDocs
 
                         while (reader.Read())
                         {
-                            Console.WriteLine($"Leyendo fila: {reader["f_name"]}");
+                            Console.WriteLine($"User_Archives_GetList - Leyendo fila: {reader["f_name"]}");
 
-                            nodes.Add(new TreeNodeModel
+                            nodeList.Add(new TreeNodeModel
                             {
                                 Table = reader["f_table"].ToString(),
                                 OwnerId = Convert.ToInt32(reader["f_owner"]),
@@ -60,11 +63,42 @@ namespace ArchiveShowDocs
                                 ImageId = Convert.ToInt32(reader["f_imageid"]),
                                 Id = reader["f_id"].ToString(),
                                 ParentId = reader["f_parentid"].ToString(),
-                                Rank = Convert.ToInt32(reader["f_rank"])
+                                Rank = Convert.ToInt32(reader["f_rank"]),
+                                HasChildren = true // Marcar como nodo que puede tener hijos
                             });
                         }
                     }
                 }
+
+                /*
+                // Añadir documentos como nodos del TreeView
+                foreach (DataRow row in documentTable.Rows)
+                {
+                    // Verificar si "class_id" no es nulo y no es igual a 0
+                    if (
+                            (row["class_id"] == DBNull.Value || Convert.ToInt32(row["class_id"]) == 0) ||
+                            (row["graphid"] == DBNull.Value || Convert.ToInt32(row["graphid"]) == 0)
+                        )
+                    {
+                        Console.WriteLine($"Fila ignorada: class_id={row["class_id"]}, doc_id={row["doc_id"]}");
+                        continue; // Saltar esta fila
+                    }
+                    
+                    Console.WriteLine($"GetDocumentList - Leyendo fila: doc_id={row["doc_id"]}, designatio={row["designatio"]}, {row["name"]}");
+
+                    nodeList.Add(new TreeNodeModel
+                    {
+                        Table = "DOCUMENT",
+                        OwnerId = Convert.ToInt32(row["class_id"]),
+                        Key = Convert.ToInt32(row["doc_id"]),
+                        Name = row["name"].ToString(),
+                        ImageId = Convert.ToInt32(row["graphid"]), // Usar imagen del tipo de documento
+                        Id = $"DOCUMENT_{row["doc_id"]}",
+                        ParentId = $"CLASSFOLD_{row["class_id"]}",
+                        Rank = row["f_rank"] != DBNull.Value ? Convert.ToInt32(row["f_rank"]) : 0
+                    });
+                 }
+                */
             }
             catch (SqlException sqlEx)
             {
@@ -84,8 +118,34 @@ namespace ArchiveShowDocs
                 // Opcional: manejar el error o lanzar una excepción
             }
 
-            return nodes;
+            return nodeList;
         }
+
+        // Cargar subnodos de una carpeta
+        public List<TreeNodeModel> LoadChildNodes(string parentId)
+        {
+            return nodeList.Where(n => n.ParentId == parentId).ToList();
+        }
+
+        // Obtener documentos relacionados con un nodo
+        public List<TreeNodeModel> GetDocumentsForNode(string parentId, DataTable documentTable)
+        {
+            return (from row in documentTable.AsEnumerable()
+                    where $"CLASSFOLD_{row["class_id"]}" == parentId
+                    select new TreeNodeModel
+                    {
+                        Table = "DOCUMENT",
+                        OwnerId = row.Field<int>("class_id"),
+                        Key = row.Field<int>("doc_id"),
+                        Name = row.Field<string>("designatio") + " [" + row.Field<string>("name") + "]",
+                        ImageId = row.Field<int>("graphid"),
+                        Id = $"DOCUMENT_{row.Field<int>("doc_id")}",
+                        ParentId = parentId,
+                        Rank = row["f_rank"] != DBNull.Value ? Convert.ToInt32(row["f_rank"]) : 0,
+                        HasChildren = false // Marcar como nodo que no puede tener hijos
+                    }).ToList();
+        }
+
 
         /// <summary>
         /// Carga los datos de las imagines para el TreeView desde la base de datos.
@@ -121,33 +181,13 @@ namespace ArchiveShowDocs
                         {
                             int key = reader.GetInt32(0);
 
-                            // Validar que el blob no sea nulo y contenga datos
-                            if (!reader.IsDBNull(1))
-                            {
-                                byte[] blob = (byte[])reader["f_blob"];
+                            Console.WriteLine($"Procesar la imagen: graphid={key}");
 
-                                // Verificar que el blob no esté vacío
-                                if (blob.Length > 0)
-                                {
-                                    try
-                                    {
-                                        using (var ms = new MemoryStream(blob))
-                                        {
-                                            Image image = Image.FromStream(ms);
-                                            imageList[key] = image;
-                                        }
-                                    }
-                                    catch (Exception imgEx)
-                                    {
-                                        // Log de errores relacionados con la imagen específica
-                                        Console.WriteLine($"Error al procesar la imagen para la clave {key}: {imgEx.Message}");
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                Console.WriteLine($"Blob nulo para la clave {key}");
-                            }
+                            // Obtener el blob
+                            byte[] blob = !reader.IsDBNull(1) ? (byte[])reader["f_blob"] : null;
+
+                            // Procesar la imagen y asignarla al diccionario
+                            imageList[key] = ProcessImage(blob, key);
                         }
                     }
                 }
@@ -169,6 +209,140 @@ namespace ArchiveShowDocs
             }
 
             return imageList;
+        }
+
+        /// <summary>
+        /// Procesa una imagen desde un blob de datos.
+        /// </summary>
+        /// <param name="blob">El arreglo de bytes que representa la imagen.</param>
+        /// <param name="key">La clave asociada con la imagen.</param>
+        /// <returns>La imagen procesada o la imagen predeterminada si ocurre un error.</returns>
+        private Image ProcessImage(byte[] blob, int key)
+        {
+            if (blob == null || blob.Length == 0)
+            {
+                Console.WriteLine($"Blob nulo o vacío para la clave {key}. Usando 'nodoc'.");
+                blob = LoadDefaultNodocImage(); // Cargar la imagen predeterminada si aún no se ha cargado
+            }
+
+            try
+            {
+                // Validar si el blob puede ser convertido a una imagen
+                using (var imageStream = new MemoryStream(blob))
+                {
+                    Console.WriteLine($"Clave: {key}, Longitud del blob: {blob.Length}");
+
+                    // Verificar si el formato del flujo es válido
+                    if (imageStream.Length == 0)
+                    {
+                        Console.WriteLine($"El flujo de la clave {key} está vacío. Usando 'nodoc'.");
+                        return Image.FromStream(new MemoryStream(LoadDefaultNodocImage()));
+                    }
+
+                    return Image.FromStream(imageStream);
+                }
+            }
+            catch (ArgumentException argEx)
+            {
+                Console.WriteLine($"Error de argumento al procesar la imagen para la clave {key}: {argEx.Message}");
+            }
+            catch (System.Runtime.InteropServices.ExternalException extEx)
+            {
+                Console.WriteLine($"Error externo al procesar la imagen para la clave {key}: {extEx.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error inesperado al procesar la imagen para la clave {key}: {ex.Message}");
+            }
+
+            // Si algo falla, devolver la imagen predeterminada
+            return Image.FromStream(new MemoryStream(LoadDefaultNodocImage()));
+        }
+
+
+        /// <summary>
+        /// Carga la imagen predeterminada "nodoc".
+        /// </summary>
+        /// <returns>La imagen predeterminada "nodoc".</returns>
+        private byte[] LoadDefaultNodocImage()
+        {
+            string nodocQuery = "SELECT f_blob FROM DBASE..uea_blobs WHERE f_key = 216";
+
+            // Obtener el blob de la base de datos
+            byte[] nodocBlob = null;
+
+            try
+            {
+                // Asegurar conexión persistente
+                _databaseManager.EnsurePersistentConnection();
+
+                using (SqlCommand nodocCommand = new SqlCommand(nodocQuery, _databaseManager._persistentConnection))
+                {
+                    nodocBlob = nodocCommand.ExecuteScalar() as byte[];
+                }
+
+                return nodocBlob;
+            }
+            catch (SqlException sqlEx)
+            {
+                StringBuilder errorDetails = new StringBuilder();
+                foreach (SqlError error in sqlEx.Errors)
+                {
+                    errorDetails.AppendLine($"Error: {error.Number}, Mensaje: {error.Message}, Línea: {error.LineNumber}");
+                }
+                Console.WriteLine($"Error SQL: {errorDetails}");
+                MessageBox.Show($"Error al cargar los datos del árbol: {errorDetails}", "Error SQL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return nodocBlob;
+            }
+
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al cargar la imagen predeterminada 'nodoc': {ex.Message}");
+                throw new InvalidOperationException("No se pudo cargar la imagen predeterminada 'nodoc'.", ex);
+            }
+        }
+
+
+        /// <summary>
+        /// Carga los datos de los documentos como el contenido para las carpetas de TreeView desde la base de datos.
+        /// </summary>
+        /// <returns>Tabla de los documentos como el contenido para los nodos del árbol.</returns>
+        public DataTable LoadDocumentList()
+        {
+            try
+            {
+                // Asegurar que la conexión persistente está abierta
+                _databaseManager.EnsurePersistentConnection();
+
+                using (SqlCommand command = new SqlCommand("DATD..GetDocumentList", _databaseManager._persistentConnection))
+                {
+                    command.CommandType = CommandType.StoredProcedure;
+
+                    using (SqlDataAdapter adapter = new SqlDataAdapter(command))
+                    {
+                        DataTable documentTable = new DataTable();
+                        adapter.Fill(documentTable);
+                        return documentTable;
+                    }
+                }
+            }
+            catch (SqlException sqlEx)
+            {
+                StringBuilder errorDetails = new StringBuilder();
+                foreach (SqlError error in sqlEx.Errors)
+                {
+                    errorDetails.AppendLine($"Error: {error.Number}, Mensaje: {error.Message}, Línea: {error.LineNumber}");
+                }
+                Console.WriteLine($"Error SQL: {errorDetails}");
+                MessageBox.Show($"Error al cargar los datos del árbol: {errorDetails}", "Error SQL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;
+            }
+
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al cargar la lista de documentos: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;
+            }
         }
 
     }

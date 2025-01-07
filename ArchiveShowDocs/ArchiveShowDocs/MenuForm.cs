@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.IO;
 
 namespace ArchiveShowDocs
 {
@@ -15,6 +16,7 @@ namespace ArchiveShowDocs
         private MainApp _mainApp;
         private DatabaseService _databaseService;
         private ImageList _imageList;
+        public DataTable documentTable;
 
         public MenuForm(MainApp mainApp)
         {
@@ -30,6 +32,9 @@ namespace ArchiveShowDocs
 
         private void MainForm_Load(object sender, EventArgs e)
         {
+            // Cargar los documentos en la tabla "documentTable"
+            documentTable = _databaseService.LoadDocumentList(); // Carga todos los documentos
+
             // Llama al método para cargar los datos
             LoadTreeView();
         }
@@ -39,7 +44,7 @@ namespace ArchiveShowDocs
             try
             {
                 // Cargar los datos desde la base de datos
-                List<TreeNodeModel> nodes = _databaseService.LoadTreeData();
+                List<TreeNodeModel> nodes = _databaseService.LoadTreeData(documentTable);
 
                 if (nodes == null || nodes.Count == 0)
                 {
@@ -66,6 +71,9 @@ namespace ArchiveShowDocs
 
                 // Rellenar el TreeView con los datos
                 PopulateTreeView(nodes);
+
+                // Manejar el evento BeforeExpand para cargar subnodos y documentos dinámicamente
+                treeView.BeforeExpand += TreeView_BeforeExpand;
             }
             catch (Exception ex)
             {
@@ -90,7 +98,14 @@ namespace ArchiveShowDocs
                     SelectedImageKey = rootNode.ImageId.ToString()
                 };
 
-                AddChildNodes(treeNode, rootNode.Id, nodes);
+                // AddChildNodes(treeNode, rootNode.Id, nodes);
+
+                // Si el nodo tiene hijos, agregar un placeholder
+                if (rootNode.HasChildren)
+                {
+                    treeNode.Nodes.Add(new TreeNode("Cargando..."));
+                }
+
                 treeView.Nodes.Add(treeNode);
             }
         }
@@ -114,25 +129,166 @@ namespace ArchiveShowDocs
             }
         }
 
+        private void TreeView_BeforeExpand(object sender, TreeViewCancelEventArgs e)
+        {
+            TreeNode parentNode = e.Node;
+            string parentId = parentNode.Tag.ToString();
+
+            // Limpiar subnodos si ya se cargaron previamente
+            if (parentNode.Nodes.Count == 1 && parentNode.Nodes[0].Text == "Cargando...")
+            {
+                parentNode.Nodes.Clear();
+
+                // Cargar los nodos hijos y documentos relacionados
+                var childNodes = _databaseService.LoadChildNodes(parentId); // Nodos hijos
+                var documents = _databaseService.GetDocumentsForNode(parentId, documentTable); // Documentos
+
+                // Obtener claves de imágenes de los documentos y cargar dinámicamente
+                var imageKeys = documents.Select(d => d.ImageId).Distinct().ToList();
+                if (imageKeys.Count > 0)
+                {
+                    var newImages = _databaseService.LoadImageList(imageKeys);
+                    foreach (var kvp in newImages)
+                    {
+                        if (!_imageList.Images.ContainsKey(kvp.Key.ToString()))
+                        {
+                            try
+                            {
+                                _imageList.Images.Add(kvp.Key.ToString(), kvp.Value);
+                                Console.WriteLine($"Imagen añadida dinámicamente para la clave: {kvp.Key}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error al agregar la imagen para la clave {kvp.Key}: {ex.Message}");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Imagen con clave {kvp.Key} ya existe en el ImageList.");
+                        }
+                    }
+                }
+
+                // Agregar nodos hijos al nodo expandido
+                foreach (var childNode in childNodes)
+                {
+                    TreeNode childTreeNode = new TreeNode
+                    {
+                        Text = childNode.Name,
+                        Tag = childNode.Id,
+                        ImageKey = childNode.ImageId.ToString(),
+                        SelectedImageKey = childNode.ImageId.ToString()
+                    };
+
+                    // Si el nodo puede tener subnodos, añadir un placeholder "Cargando..."
+                    if (childNode.HasChildren)
+                    {
+                        childTreeNode.Nodes.Add(new TreeNode("Cargando..."));
+                    }
+
+                    parentNode.Nodes.Add(childTreeNode);
+                }
+
+                // Agregar documentos como subnodos
+                foreach (var doc in documents)
+                {
+                    TreeNode documentNode = new TreeNode
+                    {
+                        Text = doc.Name,
+                        Tag = doc.Id,
+                        ImageKey = doc.ImageId.ToString(),
+                        SelectedImageKey = doc.ImageId.ToString()
+                    };
+
+                    parentNode.Nodes.Add(documentNode);
+                }
+            }
+        }
+
+
         // Añade una ImageList para asociar las imágenes con los nodos del TreeView
         private void InitializeImageList(Dictionary<int, Image> images)
         {
             try
             {
+                //  Limpiar cualquier instancia previa
+                if (_imageList != null)
+                {
+                    _imageList.Dispose();
+                    _imageList = null;
+                }
+
                 _imageList = new ImageList();
+                _imageList.ImageSize = new Size(32, 32);
+
+                Console.WriteLine($"Total de imágenes a procesar: {images.Count}");
+
                 foreach (var kvp in images)
                 {
-                    _imageList.Images.Add(kvp.Key.ToString(), kvp.Value);
+                    if (kvp.Value == null)
+                    {
+                        Console.WriteLine($"Imagen nula para la clave: {kvp.Key}");
+                        continue;
+                    }
+
+                    try
+                    {
+                        /*
+                        if (!IsImageValid(kvp.Value))
+                        {
+                            Console.WriteLine($"Imagen inválida para la clave: {kvp.Key}");
+                            continue;
+                        }
+                        */
+
+                        _imageList.Images.Add(kvp.Key.ToString(), ResizeImage(kvp.Value, _imageList.ImageSize));
+                        // _imageList.Images.Add(kvp.Key.ToString(), kvp.Value);
+                        Console.WriteLine($"Imagen añadida para la clave: {kvp.Key}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error al añadir la imagen para la clave {kvp.Key}: {ex.Message}");
+                    }
                 }
 
                 treeView.ImageList = _imageList;
+                Console.WriteLine("ImageList inicializado correctamente.");
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error al inicializar el ImageList: {ex.Message}");
                 MessageBox.Show($"Error al inicializar el ImageList: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-
         }
+
+        // Establece un tamaño predeterminado para la imagen
+        private Image ResizeImage(Image img, Size size)
+        {
+            Bitmap bmp = new Bitmap(size.Width, size.Height);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.DrawImage(img, new Rectangle(0, 0, size.Width, size.Height));
+            }
+            return bmp;
+        }
+
+        // Validar la imagen
+        private bool IsImageValid(Image img)
+        {
+            try
+            {
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    img.Save(ms, img.RawFormat);
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
 
         // Sobrescribir OnShown
         protected override void OnShown(EventArgs e)
@@ -190,7 +346,7 @@ namespace ArchiveShowDocs
         private void ConfigureTreeView()
         {
             // Configurar las propiedades básicas del TreeView
-            treeView.ItemHeight = 24; // Altura de los elementos
+            treeView.ItemHeight = 36; // Altura de los elementos
             treeView.ShowLines = true; // Mostrar líneas entre nodos
             treeView.HideSelection = false; // Mostrar selección incluso cuando el TreeView pierde el foco
             treeView.BackColor = Color.WhiteSmoke; // Fondo moderno
@@ -202,6 +358,7 @@ namespace ArchiveShowDocs
             // Configuración del ImageList (asumiendo que ya está inicializado)
             if (_imageList != null)
             {
+                _imageList.ImageSize = new Size(32, 32); // Asegúrate de que las imágenes tengan el tamaño correcto
                 treeView.ImageList = _imageList;
             }
 
