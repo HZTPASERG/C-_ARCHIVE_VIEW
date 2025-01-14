@@ -146,7 +146,6 @@ namespace ArchiveShowDocs
                     }).ToList();
         }
 
-
         /// <summary>
         /// Carga los datos de las imagines para el TreeView desde la base de datos.
         /// </summary>
@@ -343,6 +342,65 @@ namespace ArchiveShowDocs
                 MessageBox.Show($"Error al cargar la lista de documentos: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Carga los datos del documento indicado antes de mostrarlo.
+        /// </summary>
+        /// <returns>Almacena los datos del documento indicado en DocumentModel.</returns>
+        public DocumentModel GetDocumentDetails(int docId)
+        {
+            try
+            {
+                _databaseManager.EnsurePersistentConnection();
+
+                // Consulta para obtener los detalles del documento
+                string query = $@"
+                    SELECT a.doc_id, a.designatio, a.name, b.dir_name, c.flname, c.filebody
+                    FROM DATD..doclist a
+                    JOIN DATD..dc b ON a.wrk_dir_id = b.dirkey_id
+                    JOIN DDOC..docums1 c ON a.doc_id = c.file_id
+                    WHERE a.doc_id = @docId";
+
+                using (SqlCommand command = new SqlCommand(query, _databaseManager._persistentConnection))
+                {
+                    command.Parameters.AddWithValue("@docId", docId);
+
+                    using (SqlDataReader reader = command.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            return new DocumentModel
+                            {
+                                DocId = reader.GetInt32(0),
+                                Designation = reader.GetString(1),
+                                Name = reader.GetString(2),
+                                DirectoryPath = reader.GetString(3),
+                                FileName = reader.GetString(4),
+                                FileBody = reader["filebody"] as byte[]
+                            };
+                        }
+                    }
+                }
+            }
+            catch (SqlException sqlEx)
+            {
+                StringBuilder errorDetails = new StringBuilder();
+                foreach (SqlError error in sqlEx.Errors)
+                {
+                    errorDetails.AppendLine($"Error: {error.Number}, Mensaje: {error.Message}, Línea: {error.LineNumber}");
+                }
+                Console.WriteLine($"Error SQL: {errorDetails}");
+                MessageBox.Show($"Error al cargar los datos del árbol: {errorDetails}", "Error SQL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;
+            }
+
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al obtener detalles del documento: {ex.Message}");
+            }
+
+            return null;
         }
 
     }

@@ -9,3 +9,6 @@ D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\Arch
 D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.exe
 D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.pdb
 D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\obj\Debug\ArchiveShowDocs.MenuForm.resources
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\bin\Debug\Images\back-arrow.png
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\bin\Debug\Images\printer.png
+D:\VS2019\ARCHIVE\C-_ARCHIVE_VIEW\ArchiveShowDocs\ArchiveShowDocs\bin\Debug\Images\right-arrow.png

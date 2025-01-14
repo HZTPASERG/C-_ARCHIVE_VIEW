@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Printing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.IO;
+using System.Windows.Media.Imaging;
 
 namespace ArchiveShowDocs
 {
@@ -16,6 +18,7 @@ namespace ArchiveShowDocs
         private MainApp _mainApp;
         private DatabaseService _databaseService;
         private ImageList _imageList;
+        private Panel previewPanel;
         public DataTable documentTable;
 
         public MenuForm(MainApp mainApp)
@@ -28,6 +31,12 @@ namespace ArchiveShowDocs
 
             // Configurar TreeView para un estilo más moderno
             ConfigureTreeView();
+
+            // Inicializa el panel de vista previa
+            InitializePreviewPanel();
+
+            // Asocia el evento AfterSelect
+            treeView.AfterSelect += treeView_AfterSelect;
         }
 
         private void MainForm_Load(object sender, EventArgs e)
@@ -93,7 +102,7 @@ namespace ArchiveShowDocs
                 TreeNode treeNode = new TreeNode
                 {
                     Text = rootNode.Name,
-                    Tag = rootNode.Id,
+                    Tag = rootNode, // Aquí se debe asignar el objeto TreeNodeModel
                     ImageKey = rootNode.ImageId.ToString(), // Asignar imagen por clave
                     SelectedImageKey = rootNode.ImageId.ToString()
                 };
@@ -132,10 +141,11 @@ namespace ArchiveShowDocs
         private void TreeView_BeforeExpand(object sender, TreeViewCancelEventArgs e)
         {
             TreeNode parentNode = e.Node;
-            string parentId = parentNode.Tag.ToString();
+            //string parentId = parentNode.Tag.ToString();
+            string parentId = parentNode.Tag is TreeNodeModel model ? model.Id : null;
 
             // Limpiar subnodos si ya se cargaron previamente
-            if (parentNode.Nodes.Count == 1 && parentNode.Nodes[0].Text == "Cargando...")
+            if (!string.IsNullOrEmpty(parentId) && parentNode.Nodes.Count == 1 && parentNode.Nodes[0].Text == "Cargando...")
             {
                 parentNode.Nodes.Clear();
 
@@ -175,7 +185,7 @@ namespace ArchiveShowDocs
                     TreeNode childTreeNode = new TreeNode
                     {
                         Text = childNode.Name,
-                        Tag = childNode.Id,
+                        Tag = childNode,    // Guardar el TreeNodeModel completo en el Tag
                         ImageKey = childNode.ImageId.ToString(),
                         SelectedImageKey = childNode.ImageId.ToString()
                     };
@@ -195,7 +205,7 @@ namespace ArchiveShowDocs
                     TreeNode documentNode = new TreeNode
                     {
                         Text = doc.Name,
-                        Tag = doc.Id,
+                        Tag = doc,  // Guardar el TreeNodeModel completo en el Tag
                         ImageKey = doc.ImageId.ToString(),
                         SelectedImageKey = doc.ImageId.ToString()
                     };
@@ -204,7 +214,6 @@ namespace ArchiveShowDocs
                 }
             }
         }
-
 
         // Añade una ImageList para asociar las imágenes con los nodos del TreeView
         private void InitializeImageList(Dictionary<int, Image> images)
@@ -289,6 +298,591 @@ namespace ArchiveShowDocs
             }
         }
 
+        private void treeView_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            Console.WriteLine($"Nodo seleccionado: {e.Node.Text}");
+
+            TreeNode selectedNode = e.Node;
+
+            // Verificar si el Tag del nodo es un TreeNodeModel
+            if (selectedNode.Tag is TreeNodeModel nodeModel)
+            {
+                // Verificar si el nodo pertenece a la tabla "DOCUMENT"
+                if (nodeModel.Table == "DOCUMENT")
+                {
+                    int docId = nodeModel.Key;
+
+                    // Obtener detalles del documento usando el Key y Table
+                    DocumentModel document = _databaseService.GetDocumentDetails(docId);
+
+                    if (document == null || document.FileBody.Length == 0)
+                    {
+                        MessageBox.Show($"No se pudo recuperar el archivo con doc_id [{docId}] desde la base de datos.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    else
+                    {
+                        // Mostrar vista previa
+                        ShowPreview(document, selectedNode);
+                        treeView.SelectedNode = e.Node;
+                    }
+                }
+            }
+        }
+
+        // Crear el panel en tiempo de ejecución
+        private void InitializePreviewPanel()
+        {
+            previewPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.WhiteSmoke
+            };
+
+            // Agregar el panel al formulario
+            splitContainer1.Panel2.Controls.Add(previewPanel);  // Asegura que el panel esté en el lugar correcto
+        }
+
+        // Mostrar el contenido del documento indicado en el controlador de la vista previa
+        private void ShowPreview(DocumentModel document, TreeNode selectedNode)
+        {
+            // Obtenemos una ruta absoluta y verificamos si es válida utilizando Path.GetFullPath
+            string fullPath;
+            try
+            {
+                string filePath = Path.Combine(document.DirectoryPath, document.FileName);
+                fullPath = Path.GetFullPath(filePath); // Verifica que la ruta sea válida
+                Console.WriteLine($"Ruta completa: {fullPath}");
+
+                if (!File.Exists(fullPath))
+                {
+                    // Si el archivo no existe, intenta recuperarlo
+                    if (!RetrieveFileFromDatabase(document, fullPath))
+                    {
+                        ShowUnsupportedMessage($"El archivo [{fullPath}] no se encuentra disponible o no pudo ser descargado.");
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error en la ruta: {ex.Message}");
+                return;
+            }
+
+            // Mostrar vista previa
+            string extension = Path.GetExtension(document.FileName).ToUpper();
+
+            // Limpiar el panel de vista previa
+            previewPanel.Controls.Clear();
+
+            // Crear un contenedor principal (TableLayoutPanel)
+            TableLayoutPanel layoutPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2, // Una columna para el toolbar y otra para el mainPanel
+                RowCount = 1,
+            };
+
+            // Establecer tamaños proporcionales
+            layoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); // Auto para el toolbar
+            layoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // Resto para el mainPanel
+
+            // Generar el ToolBar de la vista previa
+            ToolStrip toolbar = ShowToolBarPreview(extension, fullPath, selectedNode);
+
+            // Crear el panel principal para contener la vista previa y la barra de herramientas
+            Panel mainPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true, // Permite el desplazamiento
+            };
+
+            layoutPanel.Controls.Add(toolbar, 0, 0); // Agregar toolbar a la primera columna
+            layoutPanel.Controls.Add(mainPanel, 1, 0); // Agregar mainPanel a la segunda columna
+
+            previewPanel.Controls.Add(layoutPanel); // Agregar el layoutPanel al previewPanel
+
+            switch (extension)
+            {
+                case ".PDF":
+                    ShowPdfPreview(fullPath, mainPanel);
+                    break;
+
+                case ".JPG":
+                    ShowImagePreview(fullPath, mainPanel);
+                    break;
+                case ".TIF":
+                case ".TIFF":
+                    LoadTiffWithWIC(fullPath, toolbar, mainPanel);
+                    break;
+
+                case "TXT":
+                    ShowTextPreview(fullPath, mainPanel);
+                    break;
+
+                default:
+                    ShowUnsupportedMessage($"Tipo de archivo no soportado: {extension}");
+                    break;
+            }
+
+            Console.WriteLine($"Control agregado: {previewPanel.Controls[0].GetType().Name}");
+            Console.WriteLine($"Control visible: {previewPanel.Controls[0].Visible}");
+            Console.WriteLine($"Panel dimensiones: {previewPanel.Width}x{previewPanel.Height}");
+        }
+
+        // Generar ToolBar de la vista previa
+        private ToolStrip ShowToolBarPreview(string extension, string fullPath, TreeNode selectedNode)
+        {
+            // Crear barra de herramientas
+            ToolStrip toolbar = new ToolStrip
+            {
+                Dock = DockStyle.Left,
+                GripStyle = ToolStripGripStyle.Hidden,
+                BackColor = Color.Transparent,
+                LayoutStyle = ToolStripLayoutStyle.VerticalStackWithOverflow,   // Estilo vertical
+                AutoSize = true,
+                Margin = new Padding(10, 10, 10, 10) // Margen externo: 10px alrededor del ToolStrip
+            };
+
+            // Botón de abrir el documento en la aplicación predeterminada
+            ToolStripButton btnRun = new ToolStripButton
+            {
+                Text = "Run",   // Opcional, por accesibilidad
+                DisplayStyle = ToolStripItemDisplayStyle.Image,   // Solo mostrar la imagen
+                ToolTipText = "Відукрити документ у власному додатку",
+                Margin = new Padding(5, 5, 5, 5),   // Espacio libre alrededor del botón
+            };
+            // Asignar ícono basado en el tipo de documento
+            if (selectedNode != null && !string.IsNullOrEmpty(selectedNode.ImageKey) && _imageList.Images.ContainsKey(selectedNode.ImageKey))
+            {
+                // Redimensionar la imagen a 32x32
+                Image originalImage = _imageList.Images[selectedNode.ImageKey];
+                Bitmap resizedImage = new Bitmap(originalImage, new Size(32, 32));
+                btnRun.Image = resizedImage;    // Asignar la imagen redimensionada
+            }
+            // Ajustar el tamaño del botón al tamaño de la imagen
+            btnRun.ImageScaling = ToolStripItemImageScaling.None;   // Evita que el botón escale la imagen
+            btnRun.AutoSize = false; // Permite ajustar el tamaño del botón manualmente
+            btnRun.Width = 36;
+            btnRun.Height = 36;
+
+            // Asignar eventos para cambiar el cursor
+            btnRun.MouseEnter += (s, e) => { Cursor.Current = Cursors.Hand; };  // Cambia a manoPrevious
+            btnRun.MouseLeave += (s, e) => { Cursor.Current = Cursors.Default; };  // Restaura el cursor
+
+            // Agregar botones al panel
+            toolbar.Items.Add(btnRun);
+
+            // RUN
+            btnRun.Click += (s, e) =>
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(fullPath); // Abre el archivo en la app predeterminada
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error al abrir el archivo: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+
+            // Agregar la barra de herramientas al panel de vista previa
+            previewPanel.Controls.Add(toolbar);
+
+            return toolbar;
+        }
+
+        // Recuperar el fichero del documento indicado
+        private bool RetrieveFileFromDatabase(DocumentModel document, string fullPath)
+        {
+            try
+            {
+                // Crea el directorio si no existe
+                string directoryPath = document.DirectoryPath;
+                if (!Directory.Exists(document.DirectoryPath))
+                {
+                    Directory.CreateDirectory(document.DirectoryPath);
+                    Console.WriteLine($"Directorio creado: {directoryPath}");
+                }
+
+                if (document.FileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                {
+                    throw new ArgumentException("El nombre del archivo contiene caracteres inválidos.");                   }
+
+                // Guarda el archivo en la ruta indicada
+                File.WriteAllBytes(fullPath, document.FileBody);
+
+                Console.WriteLine($"Archivo guardado en: {document.DirectoryPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al recuperar el archivo desde la base de datos: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        // PDF
+        private void ShowPdfPreview(string fullPath, Panel mainPanel)
+        {
+            try
+            {
+                WebBrowser pdfPreview = new WebBrowser
+                {
+                    Dock = DockStyle.Fill
+                };
+
+                if (File.Exists(fullPath))
+                {
+                    pdfPreview.Navigate(fullPath);
+                    mainPanel.Controls.Add(pdfPreview);
+                    previewPanel.Refresh();
+                }
+                else
+                {
+                    pdfPreview.Navigate(fullPath);
+                    mainPanel.Controls.Add(pdfPreview);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al mostrar PDF: {ex.Message}");
+            }
+        }
+
+        // IMG
+        private void ShowImagePreview(string fullPath, Panel mainPanel)
+        {
+            PictureBox imagePreview = new PictureBox
+            {
+                Dock = DockStyle.Fill,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = Image.FromFile(fullPath)
+            };
+            mainPanel.Controls.Add(imagePreview);
+        }
+
+        //TXT
+        private void ShowTextPreview(string fullPath, Panel mainPanel)
+        {
+            TextBox txtPreview = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                Dock = DockStyle.Fill,
+                Text = File.ReadAllText(fullPath)
+            };
+            mainPanel.Controls.Add(txtPreview);
+        }
+
+        // TIFF
+        private void ShowTiffPreview(string fullPath)
+        {
+            try
+            {
+                Image tiffImage = Image.FromFile(fullPath);
+
+                if (tiffImage.FrameDimensionsList.Length > 0)
+                {
+                    var dimension = new System.Drawing.Imaging.FrameDimension(tiffImage.FrameDimensionsList[0]);
+                    int frameCount = tiffImage.GetFrameCount(dimension);
+
+                    if (frameCount > 1)
+                    {
+                        // Mostrar un selector de página si el TIFF tiene múltiples páginas
+                        Panel multiPagePanel = new Panel
+                        {
+                            Dock = DockStyle.Fill
+                        };
+
+                        PictureBox imagePreview = new PictureBox
+                        {
+                            Dock = DockStyle.Fill,
+                            SizeMode = PictureBoxSizeMode.Zoom,
+                            Image = GetTiffFrame(tiffImage, 0) // Mostrar la primera página
+                        };
+
+                        Button nextButton = new Button
+                        {
+                            Text = "Siguiente",
+                            Dock = DockStyle.Bottom
+                        };
+                        nextButton.Click += (s, e) =>
+                        {
+                            int currentFrame = int.Parse(nextButton.Tag.ToString());
+                            if (currentFrame < frameCount - 1)
+                            {
+                                currentFrame++;
+                                imagePreview.Image = GetTiffFrame(tiffImage, currentFrame);
+                                nextButton.Tag = currentFrame;
+                            }
+                        };
+
+                        nextButton.Tag = 0; // Página inicial
+                        multiPagePanel.Controls.Add(imagePreview);
+                        multiPagePanel.Controls.Add(nextButton);
+                        previewPanel.Controls.Add(multiPagePanel);
+                    }
+                    else
+                    {
+                        PictureBox imagePreview = new PictureBox
+                        {
+                            Dock = DockStyle.Fill,
+                            SizeMode = PictureBoxSizeMode.Zoom,
+                            Image = new Bitmap(tiffImage)
+                        };
+                        previewPanel.Controls.Add(imagePreview);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowUnsupportedMessage($"Error al cargar el archivo TIFF: {ex.Message}");
+            }
+        }
+
+        // WIC - Windows Imaging Component
+        // Variables globales para controlar el factor de zoom
+        float zoomFactor = 1.0f;
+        private void LoadTiffWithWIC(string fullPath, ToolStrip toolbar, Panel mainPanel)
+        {
+            try
+            {
+                // Crear el PictureBox para mostrar la imagen
+                PictureBox imagePreview = new PictureBox
+                {
+                    Dock = DockStyle.Fill,
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    //Dock = DockStyle.None, // Permite un control más preciso de las dimensiones
+                };
+
+                // Decodificar el archivo TIFF
+                BitmapDecoder decoder = BitmapDecoder.Create(
+                    new Uri(fullPath),
+                    BitmapCreateOptions.PreservePixelFormat,
+                    BitmapCacheOption.OnLoad);
+
+                // Variables para navegación
+                int currentPage = 0;
+                int totalPages = decoder.Frames.Count;
+
+                // Función para cargar una página específica
+                void LoadPage(int pageIndex)
+                {
+                    // Convertir la primera página del TIFF a un Bitmap para el PictureBox
+                    using (MemoryStream memoryStream = new MemoryStream())
+                    {
+                        BitmapFrame frame = decoder.Frames[pageIndex]; // Obtener la primera página del TIFF
+                        BitmapEncoder encoder = new BmpBitmapEncoder(); // Convertir a BMP
+                        encoder.Frames.Add(frame);
+                        encoder.Save(memoryStream);
+
+                        // Crear un objeto Bitmap para el PictureBox
+                        Bitmap bitmap = new Bitmap(memoryStream);
+
+                        // Ajustar dinámicamente el tamaño del PictureBox para que la imagen quepa
+                        AdjustImageToPanelSize(bitmap, imagePreview, mainPanel);
+
+                        imagePreview.Image = bitmap; // Asignar al PictureBox
+                        //imagePreview.Width = (int)(bitmap.Width * zoomFactor);
+                        //imagePreview.Height = (int)(bitmap.Height * zoomFactor);
+                    }
+
+                    // Actualizar el estado de los botones
+                    UpdateButtonState();
+                }
+
+                void AdjustImageToPanelSize(Bitmap bitmap, PictureBox pictureBox, Panel panel)
+                {
+                    // Obtener dimensiones del panel principal
+                    int panelWidth = panel.ClientSize.Width;
+                    int panelHeight = panel.ClientSize.Height;
+
+                    // Calcular el factor de escala
+                    float widthScale = (float)panelWidth / bitmap.Width;
+                    float heightScale = (float)panelHeight / bitmap.Height;
+
+                    // Usar el menor factor de escala para mantener la relación de aspecto
+                    float scaleFactor = Math.Min(widthScale, heightScale);
+
+                    // Ajustar el tamaño del PictureBox según el factor de escala
+                    pictureBox.Width = (int)(bitmap.Width * scaleFactor);
+                    pictureBox.Height = (int)(bitmap.Height * scaleFactor);
+
+                    // Centrar el PictureBox dentro del panel
+                    pictureBox.Left = (panelWidth - pictureBox.Width) / 2;
+                    pictureBox.Top = (panelHeight - pictureBox.Height) / 2;
+                }
+
+                // Ruta a la carpeta de imágenes
+                string imagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Images");
+
+                // Crear botón "Siguiente"
+                ToolStripButton btnNext = new ToolStripButton
+                {
+                    Enabled = totalPages > 1,
+                    Text = "",
+                    DisplayStyle = ToolStripItemDisplayStyle.Image,
+                    ToolTipText = "Página siguiente",
+                    Image = Image.FromFile(Path.Combine(imagePath, "right-arrow.png")),
+                    Margin = new Padding(5, 5, 5, 5),   // Espacio libre alrededor del botón
+                    ImageScaling = ToolStripItemImageScaling.None,
+                    AutoSize = false,
+                    Width = 36,
+                    Height = 36
+                };
+
+                // Asignar eventos para cambiar el cursor
+                btnNext.MouseEnter += (s, e) => { Cursor.Current = Cursors.Hand; };  // Cambia a manoPrevious
+                btnNext.MouseLeave += (s, e) => { Cursor.Current = Cursors.Default; };  // Restaura el cursor
+
+                // Crear botón "Anterior"
+                ToolStripButton btnPrevious = new ToolStripButton
+                {
+                    Enabled = false,    // Inicialmente desactivado,
+                    Text = "",
+                    DisplayStyle = ToolStripItemDisplayStyle.Image, // Solo mostrar la imagen
+                    ToolTipText = "Página anterior",
+                    Image = Image.FromFile(Path.Combine(imagePath, "back-arrow.png")),
+                    Margin = new Padding(5, 5, 5, 5),   // Espacio libre alrededor del botón
+                    ImageScaling = ToolStripItemImageScaling.None,
+                    AutoSize = false,
+                    Width = 36,
+                    Height = 36,
+                };
+
+                // Asignar eventos para cambiar el cursor
+                btnPrevious.MouseEnter += (s, e) => { Cursor.Current = Cursors.Hand; };  // Cambia a manoPrevious
+                btnPrevious.MouseLeave += (s, e) => { Cursor.Current = Cursors.Default; };  // Restaura el cursor
+
+                // Botón de imprimir
+                ToolStripButton btnPrint = new ToolStripButton
+                {
+                    Text = "",
+                    DisplayStyle = ToolStripItemDisplayStyle.Image,
+                    ToolTipText = "Imprimir documento",
+                    Image = Image.FromFile(Path.Combine(imagePath, "printer.png")),
+                    Margin = new Padding(5, 5, 5, 5),   // Espacio libre alrededor del botón
+                    ImageScaling = ToolStripItemImageScaling.None,
+                    AutoSize = false,
+                    Width = 36,
+                    Height = 36
+                };
+
+                // Asignar eventos para cambiar el cursor
+                btnPrint.MouseEnter += (s, e) => { Cursor.Current = Cursors.Hand; };  // Cambia a manoPrevious
+                btnPrint.MouseLeave += (s, e) => { Cursor.Current = Cursors.Default; };  // Restaura el cursor
+
+                // Agregar botones al panel
+                toolbar.Items.Add(btnNext);
+                toolbar.Items.Add(btnPrevious);
+                toolbar.Items.Add(btnPrint);
+
+                // Cargar la primera página
+                LoadPage(currentPage);
+
+                // NEXT
+                btnNext.Click += (s, e) =>
+                {
+                    if (currentPage < totalPages - 1)
+                    {
+                        currentPage++;
+                        LoadPage(currentPage);
+                    }
+                };
+
+                // PREVIOUS
+                btnPrevious.Click += (s, e) =>
+                {
+                    if (currentPage > 0)
+                    {
+                        currentPage--;
+                        LoadPage(currentPage);
+                    }
+                };
+
+                // PRINT
+                btnPrint.Click += (s, e) =>
+                {
+                    PrintDocument printDocument = new PrintDocument();
+                    printDocument.PrintPage += (sender, args) =>
+                    {
+                        args.Graphics.DrawImage(imagePreview.Image, args.MarginBounds);
+                    };
+                    PrintDialog printDialog = new PrintDialog
+                    {
+                        Document = printDocument
+                    };
+                    if (printDialog.ShowDialog() == DialogResult.OK)
+                    {
+                        printDocument.Print();
+                    }
+                };
+
+                // Función para actualizar el estado de los botones
+                void UpdateButtonState()
+                {
+                    btnPrevious.Enabled = currentPage > 0;
+                    btnNext.Enabled = currentPage < totalPages - 1;
+                }
+
+                // Botón de zoom (aumentar)
+                Button btnZoomIn = new Button
+                {
+                    Text = "Zoom +"
+                };
+                btnZoomIn.Click += (s, e) =>
+                {
+                    zoomFactor *= 1.2f; // Incrementa el factor de zoom
+                    imagePreview.Dock = DockStyle.None;
+                    imagePreview.Width = (int)(imagePreview.Width * zoomFactor);
+                    imagePreview.Height = (int)(imagePreview.Height * zoomFactor);
+                 };
+                //toolbar.Controls.Add(btnZoomIn);
+
+                // Botón de zoom (disminuir)
+                Button btnZoomOut = new Button
+                {
+                    Text = "Zoom -"
+                };
+                btnZoomOut.Click += (s, e) =>
+                {
+                    zoomFactor /= 1.2f; // Decrementa el factor de zoom
+                    imagePreview.Dock = DockStyle.None;
+                    imagePreview.Width = (int)(imagePreview.Width * zoomFactor);
+                    imagePreview.Height = (int)(imagePreview.Height * zoomFactor);
+                };
+                //toolbar.Controls.Add(btnZoomOut);
+
+                // Agregar el PictureBox al mainPanel
+                mainPanel.Controls.Add(imagePreview);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al cargar el archivo TIFF con WIC: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // Obtener un marco específico de un TIFF
+        private Image GetTiffFrame(Image tiffImage, int frameIndex)
+        {
+            var dimension = new System.Drawing.Imaging.FrameDimension(tiffImage.FrameDimensionsList[0]);
+            tiffImage.SelectActiveFrame(dimension, frameIndex);
+            return new Bitmap(tiffImage); // Crear una copia en memoria del marco
+        }
+
+        // Mostrar un mensaje de error en caso de Vista previa del documento
+        private void ShowUnsupportedMessage(string textError)
+        {
+            var label = new Label
+            {
+                Text = textError,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            previewPanel.Controls.Add(label);
+        }
 
         // Sobrescribir OnShown
         protected override void OnShown(EventArgs e)
