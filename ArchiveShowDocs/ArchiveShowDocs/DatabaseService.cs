@@ -403,5 +403,15 @@ namespace ArchiveShowDocs
             return null;
         }
 
+        /// <summary>
+        /// Forzar la carga del documento.
+        /// </summary>
+        /// <returns>Almacena los datos del documento indicado en DocumentModel.</returns>
+        public DocumentModel ForceReloadDocument(int docId)
+        {
+            // Implementa la lógica para obtener el documento directamente de la BD
+            return GetDocumentDetails(docId);
+        }
+
     }
 }

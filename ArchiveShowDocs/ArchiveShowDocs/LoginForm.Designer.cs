@@ -43,9 +43,9 @@ namespace ArchiveShowDocs
             this.label1.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.label1.Location = new System.Drawing.Point(20, 30);
             this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(79, 28);
+            this.label1.Size = new System.Drawing.Size(62, 28);
             this.label1.TabIndex = 0;
-            this.label1.Text = "Usuario";
+            this.label1.Text = "Логін";
             this.label1.Click += new System.EventHandler(this.label1_Click);
             // 
             // label2
@@ -54,9 +54,9 @@ namespace ArchiveShowDocs
             this.label2.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
             this.label2.Location = new System.Drawing.Point(20, 80);
             this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(110, 28);
+            this.label2.Size = new System.Drawing.Size(81, 28);
             this.label2.TabIndex = 1;
-            this.label2.Text = "Contraseña";
+            this.label2.Text = "Пароль";
             // 
             // txtUsername
             // 
@@ -84,7 +84,7 @@ namespace ArchiveShowDocs
             this.btnLogin.Name = "btnLogin";
             this.btnLogin.Size = new System.Drawing.Size(200, 43);
             this.btnLogin.TabIndex = 4;
-            this.btnLogin.Text = "Iniciar Sesión";
+            this.btnLogin.Text = "Розпочати сесію";
             this.btnLogin.UseVisualStyleBackColor = false;
             this.btnLogin.Click += new System.EventHandler(this.label1_Click);
             // 
@@ -114,7 +114,7 @@ namespace ArchiveShowDocs
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.Name = "LoginForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.Text = "Inicio de Sesión";
+            this.Text = "Початок сесії";
             this.ResumeLayout(false);
             this.PerformLayout();
 

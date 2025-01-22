@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.IO;
 using System.Windows.Media.Imaging;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 namespace ArchiveShowDocs
 {
@@ -20,6 +22,8 @@ namespace ArchiveShowDocs
         private ImageList _imageList;
         private Panel previewPanel;
         public DataTable documentTable;
+        private bool _isClosing = false;
+        private List<string> tempFiles = new List<string>();    // Lista de ficheros temporales que muestran durante la sesion
 
         public MenuForm(MainApp mainApp)
         {
@@ -388,15 +392,15 @@ namespace ArchiveShowDocs
             layoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); // Auto para el toolbar
             layoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // Resto para el mainPanel
 
-            // Generar el ToolBar de la vista previa
-            ToolStrip toolbar = ShowToolBarPreview(extension, fullPath, selectedNode);
-
             // Crear el panel principal para contener la vista previa y la barra de herramientas
             Panel mainPanel = new Panel
             {
                 Dock = DockStyle.Fill,
                 AutoScroll = true, // Permite el desplazamiento
             };
+
+            // Generar el ToolBar de la vista previa
+            ToolStrip toolbar = ShowToolBarPreview(extension, fullPath, selectedNode, mainPanel);
 
             layoutPanel.Controls.Add(toolbar, 0, 0); // Agregar toolbar a la primera columna
             layoutPanel.Controls.Add(mainPanel, 1, 0); // Agregar mainPanel a la segunda columna
@@ -420,6 +424,10 @@ namespace ArchiveShowDocs
                 case "TXT":
                     ShowTextPreview(fullPath, mainPanel);
                     break;
+                case ".DOC":
+                case ".DOCX":
+                    ShowWordPreview(fullPath, mainPanel);
+                    break;
 
                 default:
                     ShowUnsupportedMessage($"Tipo de archivo no soportado: {extension}");
@@ -432,8 +440,11 @@ namespace ArchiveShowDocs
         }
 
         // Generar ToolBar de la vista previa
-        private ToolStrip ShowToolBarPreview(string extension, string fullPath, TreeNode selectedNode)
+        private ToolStrip ShowToolBarPreview(string extension, string fullPath, TreeNode selectedNode, Panel mainPanel)
         {
+            // Ruta a la carpeta de imágenes
+            string imagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Images");
+
             // Crear barra de herramientas
             ToolStrip toolbar = new ToolStrip
             {
@@ -443,6 +454,20 @@ namespace ArchiveShowDocs
                 LayoutStyle = ToolStripLayoutStyle.VerticalStackWithOverflow,   // Estilo vertical
                 AutoSize = true,
                 Margin = new Padding(10, 10, 10, 10) // Margen externo: 10px alrededor del ToolStrip
+            };
+
+            // Crear botón "Reload"
+            ToolStripButton btnReload = new ToolStripButton
+            {
+                Text = "",
+                DisplayStyle = ToolStripItemDisplayStyle.Image,
+                ToolTipText = "Завантажити документ повторно",
+                Image = Image.FromFile(Path.Combine(imagePath, "reload.png")),
+                Margin = new Padding(5, 5, 5, 5),   // Espacio libre alrededor del botón
+                ImageScaling = ToolStripItemImageScaling.None,
+                AutoSize = false,
+                Width = 36,
+                Height = 36
             };
 
             // Botón de abrir el documento en la aplicación predeterminada
@@ -468,11 +493,17 @@ namespace ArchiveShowDocs
             btnRun.Height = 36;
 
             // Asignar eventos para cambiar el cursor
+            // btnRun
             btnRun.MouseEnter += (s, e) => { Cursor.Current = Cursors.Hand; };  // Cambia a manoPrevious
             btnRun.MouseLeave += (s, e) => { Cursor.Current = Cursors.Default; };  // Restaura el cursor
 
+            // btnReload
+            btnReload.MouseEnter += (s, e) => { Cursor.Current = Cursors.Hand; };  // Cambia a manoPrevious
+            btnReload.MouseLeave += (s, e) => { Cursor.Current = Cursors.Default; };  // Restaura el cursor
+
             // Agregar botones al panel
             toolbar.Items.Add(btnRun);
+            toolbar.Items.Add(btnReload);
 
             // RUN
             btnRun.Click += (s, e) =>
@@ -483,9 +514,81 @@ namespace ArchiveShowDocs
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error al abrir el archivo: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"Помилка вдкриття документа: {ex.Message}", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             };
+            
+            // RELOAD
+            btnReload.Click += (s, e) =>
+            {
+                try
+                {
+                    if (selectedNode?.Tag is TreeNodeModel nodeModel && nodeModel.Table == "DOCUMENT")
+                    {
+                        // Forzar la recarga del documento desde la base de datos
+                        var document = _databaseService.ForceReloadDocument(nodeModel.Key);
+
+                        if (document != null && document.FileBody.Length > 0)
+                        {
+                            string filePath = Path.Combine(document.DirectoryPath, document.FileName);
+
+                            // Asegurarse de que el archivo no está en uso
+                            if (IsFileLocked(filePath))
+                            {
+                                MessageBox.Show("Архів продовжує використовуватися іншим процесом.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                return;
+                            }
+
+                            // Sobrescribir el archivo en el disco
+                            File.WriteAllBytes(filePath, document.FileBody);
+
+                            // Eliminar el contenido del mainPanel
+                            foreach (Control control in mainPanel.Controls)
+                            {
+                                if (control is WebBrowser webBrowser)
+                                {
+                                    webBrowser.Navigate("about:blank"); // Navegar a una página en blanco
+                                    webBrowser.Dispose(); // Liberar recursos del control
+                                }
+                            }
+                            mainPanel.Controls.Clear();
+                            
+                            // Actualizar la vista previa
+                            ShowPreview(document, selectedNode);
+                        }
+                        else
+                        {
+                            MessageBox.Show($"Помилка завантаження документа з бази данних.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Помилка завантаження документа: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            
+
+            /*
+            btnReload.Click += (s, e) =>
+            {
+                try
+                {
+                    if (File.Exists(fullPath))
+                    {
+                        // Eliminar el archivo actual del disco
+                        File.Delete(fullPath);
+                    }
+
+                    // Forzar el evento treeView_AfterSelect para el nodo actual
+                    treeView_AfterSelect(this, new TreeViewEventArgs(selectedNode));
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error al recargar el documento: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            */
 
             // Agregar la barra de herramientas al panel de vista previa
             previewPanel.Controls.Add(toolbar);
@@ -864,6 +967,157 @@ namespace ArchiveShowDocs
             }
         }
 
+        // Microsoft.Office.Interop.Word - renderizar documentos de Word
+        private void ShowWordPreview(string fullPath, Panel mainPanel)
+        {
+            Microsoft.Office.Interop.Word.Application wordApp = null;
+            Microsoft.Office.Interop.Word.Document wordDoc = null;
+            string tempPdfPath = null;
+
+            try
+            {
+                // Verificar si el archivo está bloqueado antes de abrirlo
+                if (IsFileLocked(fullPath))
+                {
+                    MessageBox.Show("Документ використовується іншим процесом.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                // Crear una nueva instancia de Word
+                wordApp = new Microsoft.Office.Interop.Word.Application();
+                wordDoc = wordApp.Documents.Open(
+                    fullPath,
+                    ReadOnly: true, // Abrir en modo de solo lectura
+                    Visible: false
+                );
+
+                /*
+                // Exportar a PDF para previsualizar
+                tempPdfPath = Path.ChangeExtension(fullPath, ".pdf");
+
+                // Eliminar archivo temporal si existe y no está bloqueado
+                if (!string.IsNullOrEmpty(tempPdfPath) && File.Exists(tempPdfPath))
+                {
+                    if (IsFileLocked(tempPdfPath))
+                    {
+                        // Si está bloqueado, esperar unos momentos o manejarlo de otra forma
+                        MessageBox.Show("El archivo temporal PDF está bloqueado y no puede ser eliminado.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        // return;
+                    }
+
+                    try
+                    {
+                        File.Delete(tempPdfPath);
+                        // Sobrescribir el archivo directamente sin eliminarlo
+                        // wordDoc.ExportAsFixedFormat(tempPdfPath, Microsoft.Office.Interop.Word.WdExportFormat.wdExportFormatPDF);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Не можливо видалити тимчасовий документ: {ex.Message}", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                }
+                */
+
+                // Generar un nombre único para el archivo temporal PDF
+                string tempDirectory = Path.GetTempPath(); // Usar el directorio temporal del sistema
+                tempPdfPath = Path.Combine(tempDirectory, $"{Guid.NewGuid()}.pdf");
+                // Guardamos la reuta completa al fichero temporal para poder borarlo al final de la sesion
+                tempFiles.Add(tempPdfPath);
+
+                // Exportar el documento de Word a PDF
+                wordDoc.ExportAsFixedFormat(tempPdfPath, Microsoft.Office.Interop.Word.WdExportFormat.wdExportFormatPDF);
+
+                // Mostrar el PDF en un WebBrowser o cualquier visor de PDF
+                WebBrowser pdfPreview = new WebBrowser
+                {
+                    Dock = DockStyle.Fill
+                };
+                pdfPreview.Navigate(tempPdfPath);
+                mainPanel.Controls.Add(pdfPreview);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Помилка відображення файла .doc/.docx: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                // Liberar recursos
+                try
+                {
+                    if (wordDoc != null)
+                    {
+                        wordDoc.Close(false);
+                        Marshal.ReleaseComObject(wordDoc);
+                    }
+                    if (wordApp != null)
+                    {
+                        wordApp.Quit();
+                        Marshal.ReleaseComObject(wordApp);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Помилка звільнення ресурсів документа Word: {ex.Message}");
+                }
+
+                wordDoc = null;
+                wordApp = null;
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
+                /*
+                // Eliminar archivo temporal
+                if (!string.IsNullOrEmpty(tempPdfPath) && File.Exists(tempPdfPath))
+                {
+                    try
+                    {
+                        File.Delete(tempPdfPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Не можливо видалити тимчасовий документ: {ex.Message}");
+                    }
+                }
+                */
+            }
+        }
+
+        // Asegurarse si un archivo está bloqueado antes de intentar sobrescribirlo
+        private bool IsFileLocked(string filePath)
+        {
+            try
+            {
+                using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite))
+                {
+                    return false; // No está bloqueado
+                }
+            }
+            catch (IOException)
+            {
+                return true; // Está bloqueado
+            }
+        }
+
+        // Manejo adicional de procesos de Word
+        private void KillExistingWordProcesses()
+        {
+            var wordProcesses = System.Diagnostics.Process.GetProcessesByName("WINWORD");
+            foreach (var process in wordProcesses)
+            {
+                try
+                {
+                    process.Kill();
+                    process.WaitForExit();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"No se pudo cerrar el proceso Word: {ex.Message}");
+                }
+            }
+        }
+
+
         // Obtener un marco específico de un TIFF
         private Image GetTiffFrame(Image tiffImage, int frameIndex)
         {
@@ -895,21 +1149,10 @@ namespace ArchiveShowDocs
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // Confirmar si el usuario realmente quiere salir
-            var result = MessageBox.Show(
-                "¿Está seguro de que desea cerrar la aplicación?",
-                "Confirmar salida",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
+            // Lógica de cierre sin confirmación, ya que esta se maneja en OnFormClosing
+            _mainApp.EndApp(); // Cierra la sesión actual de SQL Server y libera recursos
 
-            if (result == DialogResult.Yes)
-            {
-                // Cierra la sesión actual de SQL Server y libera recursos
-                _mainApp.EndApp();
-
-                // Cierra la aplicación
-                Application.Exit();
-            }
+            Application.Exit(); // Cierra la aplicación
 
         }
 
@@ -957,6 +1200,56 @@ namespace ArchiveShowDocs
             }
 
             // Configuración adicional si es necesario
+        }
+
+        // Ejecuta cuando se pulsa la cruz de cerrar la app
+        private void OnFormClosing(object sender, FormClosingEventArgs e)
+        {
+            // Verificar si ya se está cerrando la aplicación
+            if (_isClosing)
+            {
+                return;
+            }
+
+            // Preguntar si el usuario quiere cerrar la aplicación
+            var result = MessageBox.Show(
+                "Ви впевнені, що бажаєте вийти з програим?",
+                "Підтвердження виходу",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (result == DialogResult.Yes)
+            {
+                // Borramos los ficheros temporales
+                foreach (var tempFile in tempFiles)
+                {
+                    if (File.Exists(tempFile))
+                    {
+                        try
+                        {
+                            File.Delete(tempFile);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"No se pudo eliminar el archivo temporal {tempFile}: {ex.Message}");
+                        }
+                    }
+                }
+
+                // Establece la bandera para evitar múltiples ejecuciones
+                _isClosing = true;
+
+                // Llama a la función exitToolStripMenuItem_Click para liberar recursos
+                //exitToolStripMenuItem_Click(null, EventArgs.Empty);
+
+                // Permitir el cierre del formulario
+                e.Cancel = false;
+            }
+            else
+            {
+                // Cancela el cierre del formulario
+                e.Cancel = true;
+            }
         }
     }
 }

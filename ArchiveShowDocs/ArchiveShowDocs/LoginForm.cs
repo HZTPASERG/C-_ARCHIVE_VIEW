@@ -28,10 +28,10 @@ namespace ArchiveShowDocs
         public LoginForm(DatabaseManager tmpDatabaseManager)
         {
             if (tmpDatabaseManager == null)
-                throw new ArgumentNullException(nameof(tmpDatabaseManager), "El objeto DatabaseManager no puede ser nulo.");
+                throw new ArgumentNullException(nameof(tmpDatabaseManager), "Об'кт DatabaseManager не може бути NULL.");
 
             if (tmpDatabaseManager._temporaryConnection == null || tmpDatabaseManager._temporaryConnection.State != ConnectionState.Open)
-                throw new InvalidOperationException("La conexión temporal no está abierta en el objeto DatabaseManager.");
+                throw new InvalidOperationException("Тимчасове з'єднання відсутнє в об'кті DatabaseManager.");
 
             InitializeComponent();
             _tmpDatabaseManager = tmpDatabaseManager ?? throw new ArgumentNullException(nameof(tmpDatabaseManager));
@@ -54,7 +54,7 @@ namespace ArchiveShowDocs
         {
             if (_tmpDatabaseManager._temporaryConnection == null || _tmpDatabaseManager._temporaryConnection.State != ConnectionState.Open)
             {
-                lblMessage.Text = "La conexión temporal no está abierta.";
+                lblMessage.Text = "Тимчасове з'єднання відсутнє.";
                 return;
             }
 
@@ -63,7 +63,7 @@ namespace ArchiveShowDocs
 
             if (string.IsNullOrEmpty(Username) || string.IsNullOrEmpty(password))
             {
-                lblMessage.Text = "Por favor, ingrese su usuario y contraseña.";
+                lblMessage.Text = "Буль-ласка, введіть ваш логін і пароль.";
                 return;
             }
 
@@ -73,11 +73,11 @@ namespace ArchiveShowDocs
             if (!_tmpDatabaseManager.ValidateUser(Username, EncodedPassword, out int id, out string role, out bool pwdChangeRequired, out string fullName))
             {
                 _loginAttempts--;
-                lblMessage.Text = $"Usuario o contraseña incorrectos. Intentos restantes: {_loginAttempts}";
+                lblMessage.Text = $"Корстувач або пароль не вірні. Залишилося спроб: {_loginAttempts}";
 
                 if (_loginAttempts <= 0)
                 {
-                    MessageBox.Show("Se han agotado los intentos de inicio de sesión.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("Ви перевищили кількість спроб розпочати сесію.", "Помилка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     Application.Exit();
                 }
                 return;
