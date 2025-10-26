@@ -4,22 +4,27 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace ArchiveShowDocs
 {
     public class UserCatalog
     {
-        private string _basePath;       // Ruta base para los directorios de usuarios
-        private string _userLogin;      // Nombre de usuario
-        private string _userPath;       // Ruta completa del directorio del usuario
-        private string _lockFile;       // Archivo de bloqueo
+        private string _basePath;               // Ruta base para los directorios de usuarios
+        private string _userLogin;              // Nombre de usuario
+        private string _userPath;               // Ruta completa del directorio del usuario
+        private string _lockFile;               // Archivo de bloqueo
+        private FileStream _lockFileStream;     // Mantiene el archivo de bloqueo abierto
 
         public UserCatalog(string basePath, string userLogin)
         {
             _basePath = basePath;
             _userLogin = userLogin;
-            _userPath = Path.Combine(_basePath, _userLogin, "ARCHIV_USER"); // Ruta: basePath/userLogin/ARCHIV_USER
-            _lockFile = Path.Combine(_userPath, $"{_userLogin}.lock");      // Archivo de bloqueo: userPath/userLogin.lock
+            _userPath = Path.Combine(_basePath, _userLogin, AppConstants.DirectoryOtherUsersProgram);       // Ruta: basePath/userLogin/ARCHIV_USER
+            _lockFile = Path.Combine(_userPath, $"{_userLogin}.lock");                                      // Archivo de bloqueo: userPath/userLogin.lock
+
+            Debug.WriteLine("UserPath: " + _userPath);
+            Debug.WriteLine("LockFile: " + _lockFile);
         }
 
         public bool EnsureUserCatalog()
@@ -32,27 +37,24 @@ namespace ArchiveShowDocs
                     Directory.CreateDirectory(_userPath);
                 }
 
-                // 2. Verificar si existe el archivo de bloqueo
+                // 2. Intentar abrir el archivo en modo exclusivo
                 if (File.Exists(_lockFile))
                 {
-                    // Intentar abrir el archivo en modo exclusivo
-                    using (FileStream fs = new FileStream(_lockFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-                    {
-                        // Archivo de bloqueo disponible
-                    }
+                    // Si ya existe el archivo, intentar abrirlo sin permitir compartirlo
+                    _lockFileStream = new FileStream(_lockFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
                 }
                 else
                 {
-                    // Crear el archivo de bloqueo si no existe
-                    using (FileStream fs = new FileStream(_lockFile, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
-                    {
-                        // Archivo de bloqueo creado
-                    }
+                    // Si no existe el archivo, crearlo en modo exclusivo
+                    _lockFileStream = new FileStream(_lockFile, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
                 }
 
                 // 3. Verificar si existen los archivos de configuración y copiarlos si es necesario
-                string defaultConfigFile = Path.Combine(_basePath, "DefaultConfig.ini");
-                string userConfigFile = Path.Combine(_userPath, "Config.ini");
+                string defaultConfigFile = Path.Combine(AppConstants.DirectoryOfConfig, AppConstants.DefaultConfigIni);
+                string userConfigFile = Path.Combine(_userPath, AppConstants.ConfigIni);
+
+                Debug.WriteLine("DefaultConfigFile: " + defaultConfigFile);
+                Debug.WriteLine("UserConfigFile: " + userConfigFile);
 
                 if (!File.Exists(userConfigFile) && File.Exists(defaultConfigFile))
                 {
@@ -64,7 +66,7 @@ namespace ArchiveShowDocs
             catch (IOException)
             {
                 // Ocurre si otro proceso ya tiene el archivo de bloqueo abierto
-                Console.WriteLine("El directorio del usuario está en uso por otra sesión.");
+                Console.WriteLine("IOException in EnsureUserCatalog: Каталог користувача зайнятий іншою сесією.");
                 return false;
             }
             catch (Exception ex)
@@ -78,6 +80,10 @@ namespace ArchiveShowDocs
         {
             try
             {
+                // Cerrar el FileStream antes de eliminar el archivo
+                _lockFileStream?.Close();
+                _lockFileStream?.Dispose();
+
                 // Eliminar el archivo de bloqueo al finalizar la sesión
                 if (File.Exists(_lockFile))
                 {
@@ -89,5 +95,6 @@ namespace ArchiveShowDocs
                 Console.WriteLine($"Error al liberar el archivo de bloqueo: {ex.Message}");
             }
         }
+
     }
 }

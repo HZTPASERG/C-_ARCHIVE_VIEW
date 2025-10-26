@@ -28,7 +28,7 @@ namespace ArchiveShowDocs
         public LoginForm(DatabaseManager tmpDatabaseManager)
         {
             if (tmpDatabaseManager == null)
-                throw new ArgumentNullException(nameof(tmpDatabaseManager), "Об'кт DatabaseManager не може бути NULL.");
+                throw new ArgumentNullException(nameof(tmpDatabaseManager), "Об'єкт DatabaseManager не може бути NULL.");
 
             if (tmpDatabaseManager._temporaryConnection == null || tmpDatabaseManager._temporaryConnection.State != ConnectionState.Open)
                 throw new InvalidOperationException("Тимчасове з'єднання відсутнє в об'кті DatabaseManager.");
@@ -39,6 +39,7 @@ namespace ArchiveShowDocs
             LoadPreviousUsername();
         }
 
+        // Leer el último usuario del archivo INI
         private void LoadPreviousUsername()
         {
             string iniFilePath = Path.Combine(AppConstants.DirectoryOfConfig, AppConstants.SqlIniFile);
@@ -61,7 +62,7 @@ namespace ArchiveShowDocs
             Username = txtUsername.Text.Trim();
             string password = txtPassword.Text.Trim();
 
-            if (string.IsNullOrEmpty(Username) || string.IsNullOrEmpty(password))
+            if (string.IsNullOrEmpty(Username))
             {
                 lblMessage.Text = "Буль-ласка, введіть ваш логін і пароль.";
                 return;

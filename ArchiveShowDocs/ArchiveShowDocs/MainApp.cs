@@ -34,10 +34,12 @@ namespace ArchiveShowDocs
                 AppConstants.LoginPassword, 
                 ""
             );
+
             if (!connectionOpened)
             {
                 throw new InvalidOperationException("No se pudo establecer la conexión temporal.");
             }
+
             LocalPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppConstants.DirectoryOfConfig);
             Debug.WriteLine("LocalPath: " + LocalPath);
         }
@@ -79,12 +81,12 @@ namespace ArchiveShowDocs
                 WindowTitle = WindowTitle + " | Користувач: " + UserFullName;
 
                 // Configurar directorio del usuario
-                UserCatalog = new UserCatalog(AppConstants.DirectoryOfConfig, UserName);
+                UserCatalog = new UserCatalog(AppConstants.DirectoryOtherUsers, UserName);
 
                 if (!UserCatalog.EnsureUserCatalog())
                 {
                     System.Windows.Forms.MessageBox.Show(
-                        "El directorio del usuario está en uso o no se pudo configurar.",
+                        "UserCatalog.EnsureUserCatalog(): Каталог користувача зайнятий іншою сесією.",
                         "Error", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error
                     );
                     return false;

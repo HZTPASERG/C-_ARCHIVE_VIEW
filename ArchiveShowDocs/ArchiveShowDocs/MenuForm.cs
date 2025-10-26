@@ -1240,7 +1240,7 @@ namespace ArchiveShowDocs
                 _isClosing = true;
 
                 // Llama a la función exitToolStripMenuItem_Click para liberar recursos
-                //exitToolStripMenuItem_Click(null, EventArgs.Empty);
+                exitToolStripMenuItem_Click(null, EventArgs.Empty);
 
                 // Permitir el cierre del formulario
                 e.Cancel = false;

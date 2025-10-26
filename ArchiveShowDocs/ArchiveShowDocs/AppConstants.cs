@@ -31,9 +31,12 @@ namespace ArchiveShowDocs
         public const string AdminPassword = "adm";
 
         // Directorios
-        //public const string DirectoryOtherUsers = "\\nt3\Users$";
+        public const string DirectoryOtherUsers = @"\\nt3\Users$";
+        public const string DirectoryOtherUsersProgram = @"ArchiveShowDocs";
         public const string DirectoryOfConfig = "USERS";
         public const int LoginAttemptLimit = 3;
         public const string LockFileName = "SERG.txt";
+        public const string DefaultConfigIni = "USER.INI";
+        public const string ConfigIni = "USER.INI";
     }
 }
