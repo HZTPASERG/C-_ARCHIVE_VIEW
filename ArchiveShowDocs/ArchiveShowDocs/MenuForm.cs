@@ -20,10 +20,19 @@ namespace ArchiveShowDocs
         private MainApp _mainApp;
         private DatabaseService _databaseService;
         private ImageList _imageList;
+        private TabControl rightPaneTabs;
         private Panel previewPanel;
         public DataTable documentTable;
         private bool _isClosing = false;
         private List<string> tempFiles = new List<string>();    // Lista de ficheros temporales que muestran durante la sesion
+
+        // Panel derecho con pestañas
+        private TabControl rigrhtPaneTab;
+        private TabPage tabList;
+        private TabPage tabPreview;
+
+        // Grid de la pestaña Lista
+        private SmartGrid docGrid;
 
         public MenuForm(MainApp mainApp)
         {
@@ -35,6 +44,9 @@ namespace ArchiveShowDocs
 
             // Configurar TreeView para un estilo más moderno
             ConfigureTreeView();
+
+            // Inicializa el panel de las pestañas
+            InitializeTabControl();
 
             // Inicializa el panel de vista previa
             InitializePreviewPanel();
@@ -333,6 +345,27 @@ namespace ArchiveShowDocs
             }
         }
 
+        // Crear el panel de TabControl en tiempo de ejecución
+        private void InitializeTabControl()
+        {
+            // ---- NUEVO: construir pestañas del lado derecho ----
+            rightPaneTabs = new TabControl
+            {
+                Dock = DockStyle.Fill,
+                Alignment = TabAlignment.Top,
+                SizeMode = TabSizeMode.Fixed
+            };
+
+            tabList = new TabPage("Lista");        // aquí irá el DataGridView (modo Grid)
+            tabPreview = new TabPage("Vista previa"); // aquí alojaremos tu preview actual
+
+            rightPaneTabs.TabPages.Add(tabList);
+            rightPaneTabs.TabPages.Add(tabPreview);
+
+            // Insertar el TabControl en Panel2 del SplitContainer
+            splitContainer1.Panel2.Controls.Add(rightPaneTabs);
+        }
+
         // Crear el panel en tiempo de ejecución
         private void InitializePreviewPanel()
         {
@@ -344,7 +377,8 @@ namespace ArchiveShowDocs
             };
 
             // Agregar el panel al formulario
-            splitContainer1.Panel2.Controls.Add(previewPanel);  // Asegura que el panel esté en el lugar correcto
+            // splitContainer1.Panel2.Controls.Add(previewPanel);  // Asegura que el panel esté en el lugar correcto
+            tabPreview.Controls.Add(previewPanel);
         }
 
         // Mostrar el contenido del documento indicado en el controlador de la vista previa
@@ -373,6 +407,9 @@ namespace ArchiveShowDocs
                 Console.WriteLine($"Error en la ruta: {ex.Message}");
                 return;
             }
+
+            // Mostrar nombre del archivo en el titulo de la pestaña
+            tabPreview.Text = $"Vista previa — {Path.GetFileName(fullPath)}";
 
             // Mostrar vista previa
             string extension = Path.GetExtension(document.FileName).ToUpper();
